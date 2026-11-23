@@ -381,14 +381,16 @@ export default function App() {
           </div>
         </header>
 
-        {/* View Area (Zero scrollbar for single-page generator) */}
+        {/* View Area (Zero scrollbar for single-page generator with ambient section gradient) */}
         <div
-          className={`flex-1 min-h-0 ${
+          className={`flex-1 min-h-0 relative bg-gradient-to-b from-[#12151f] via-[#0a0c10] to-[#07080b] ${
             isSinglePageGenerator
               ? 'overflow-hidden flex flex-col p-4 sm:p-6 lg:p-7'
               : 'overflow-y-auto p-4 sm:p-7 custom-scrollbar'
           }`}
         >
+          {/* Subtle ambient lighting from top */}
+          <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_75%_50%_at_50%_0%,rgba(186,98,56,0.09),transparent_70%)]" />
           {/* Error Banner */}
           {error && (
             <div className="max-w-3xl mx-auto mb-4 p-3.5 rounded-xl bg-err/10 border border-err/30 text-err text-xs sm:text-sm flex items-start justify-between gap-3 animate-fade">

@@ -105,9 +105,13 @@ def fetch_url_info(req: UrlInfoRequest) -> dict:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "socket_timeout": 15,
+        "socket_timeout": 10,
         "extract_flat": False,
     }
+    node_exe = shutil.which("node")
+    if node_exe:
+        opts["js_runtimes"] = {"node": {"path": node_exe}}
+        opts["remote_components"] = ["ejs:github"]
     # Check cookies file if present
     cookie_candidate = None
     if (DATA_DIR / "cookies.txt").exists():
