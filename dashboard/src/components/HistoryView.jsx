@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Clock,
   Trash2,
@@ -12,7 +12,135 @@ import {
   AlertTriangle,
   CheckCircle2,
   X,
+  Play,
 } from 'lucide-react';
+
+function HistoryClipCard({ clip, onDownload, onDelete }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const videoRef = useRef(null);
+
+  const videoUrl = clip.url || `/media/${clip.jobId}/clips/${clip.filename}`;
+  const srtFilename = String(clip.filename).replace(/\.mp4$/i, '.srt');
+  const srtUrl = clip.srt_url || `/media/${clip.jobId}/clips/${srtFilename}`;
+  const thumbUrl = clip.thumb_url || (clip.thumb ? `/media/${clip.jobId}/${clip.thumb}` : null);
+  const durationSec = clip.duration
+    ? Math.round(clip.duration)
+    : Math.round((clip.end || 0) - (clip.start || 0));
+  const score = Math.round(clip.score || clip.virality_score || 75);
+
+  const handlePlay = (e) => {
+    setIsPlaying(true);
+    // Pause all other video elements across the entire page
+    document.querySelectorAll('video').forEach((v) => {
+      if (v !== e.target && !v.paused) {
+        v.pause();
+      }
+    });
+  };
+
+  const handlePause = () => {
+    setIsPlaying(false);
+  };
+
+  const togglePlay = (e) => {
+    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      document.querySelectorAll('video').forEach((v) => {
+        if (v !== videoRef.current && !v.paused) v.pause();
+      });
+      videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
+    }
+  };
+
+  return (
+    <div className="card p-3 border border-rule2 bg-[#0e1015] hover:border-[#ba6238]/50 transition-colors rounded-2xl flex flex-col justify-between group">
+      {/* 9:16 Video Player Preview - Click anywhere to toggle play/pause */}
+      <div
+        onClick={togglePlay}
+        className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black flex items-center justify-center border border-rule cursor-pointer group/video"
+      >
+        <video
+          ref={videoRef}
+          src={videoUrl || undefined}
+          poster={thumbUrl || undefined}
+          controls
+          preload="metadata"
+          className="w-full h-full object-cover"
+          onPlay={handlePlay}
+          onPause={handlePause}
+        />
+
+        {/* Center Play Glass Icon Overlay (visible when paused or hover) */}
+        {!isPlaying && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/25 group-hover/video:bg-black/45 transition-colors">
+            <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-2xl group-hover/video:scale-110 transition-transform">
+              <Play size={20} className="fill-white ml-0.5" />
+            </div>
+          </div>
+        )}
+
+        {/* Top Badges */}
+        <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none z-10">
+          <span className="pill pill-ok text-[10px] font-mono font-bold">
+            Score {score}
+          </span>
+          {durationSec > 0 && (
+            <span className="pill bg-black/80 border border-rule text-ink text-[10px] font-mono">
+              {durationSec}s
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Metadata & Actions */}
+      <div className="mt-3 space-y-2.5 min-w-0">
+        <div className="min-w-0">
+          <p className="text-xs sm:text-sm font-medium text-ink line-clamp-2 break-words leading-snug">
+            {clip.title || clip.hook || clip.text || clip.filename}
+          </p>
+          <div className="flex items-center gap-1.5 mt-1 text-[10.5px] text-muted font-mono truncate">
+            <Clock size={11} className="shrink-0" />
+            <span className="truncate">{clip.jobDate}</span>
+          </div>
+        </div>
+
+        {/* Action buttons: Download MP4 | SRT | Seperate Individual Delete Button */}
+        <div className="flex items-center gap-1.5 pt-1.5 border-t border-rule/70">
+          <button
+            type="button"
+            onClick={(e) => onDownload(e, videoUrl, clip.filename)}
+            className="flex-1 py-1.5 px-2 bg-paper3 hover:bg-[#ba6238] hover:text-white text-ink rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1 border border-rule cursor-pointer truncate"
+            title="Download MP4 video"
+          >
+            <Download size={12} className="shrink-0" />
+            <span className="truncate">MP4</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => onDownload(e, srtUrl, srtFilename)}
+            className="py-1.5 px-2.5 bg-paper2 hover:bg-paper3 text-muted hover:text-ink rounded-lg text-xs font-mono transition-colors border border-rule cursor-pointer shrink-0"
+            title="Download Subtitles SRT"
+          >
+            SRT
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onDelete(clip.jobId, clip.filename)}
+            className="p-1.5 bg-paper2 hover:bg-err/20 text-muted hover:text-err rounded-lg transition-colors border border-rule shrink-0 cursor-pointer"
+            title="Delete this clip"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function HistoryView({ jobs = [], onRefresh, onDeleteAll, onNavigateToGenerator }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,6 +160,8 @@ export default function HistoryView({ jobs = [], onRefresh, onDeleteAll, onNavig
 
     jobs.forEach((job) => {
       if (!job || typeof job !== 'object') return;
+      // Only show clips from successfully finished jobs (ignore errored/cancelled with missing files)
+      if (job.status !== 'done') return;
 
       let jobDateObj = new Date();
       if (job.created) {
@@ -253,90 +383,14 @@ export default function HistoryView({ jobs = [], onRefresh, onDeleteAll, onNavig
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {filteredClips.map((clip, index) => {
-            const videoUrl = clip.url || `/media/${clip.jobId}/clips/${clip.filename}`;
-            const srtFilename = String(clip.filename).replace(/\.mp4$/i, '.srt');
-            const srtUrl = clip.srt_url || `/media/${clip.jobId}/clips/${srtFilename}`;
-            const thumbUrl = clip.thumb_url || (clip.thumb ? `/media/${clip.jobId}/${clip.thumb}` : null);
-            const durationSec = clip.duration
-              ? Math.round(clip.duration)
-              : Math.round((clip.end || 0) - (clip.start || 0));
-            const score = Math.round(clip.score || clip.virality_score || 75);
-
-            return (
-              <div
-                key={`${clip.jobId}-${clip.filename}-${index}`}
-                className="card p-3 border border-rule2 bg-[#0e1015] hover:border-[#ba6238]/50 transition-colors rounded-2xl flex flex-col justify-between group"
-              >
-                {/* 9:16 Video Player Preview */}
-                <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black flex items-center justify-center border border-rule">
-                  <video
-                    src={videoUrl || undefined}
-                    poster={thumbUrl || undefined}
-                    controls
-                    preload="metadata"
-                    className="w-full h-full object-cover"
-                  />
-
-                  {/* Top Badges */}
-                  <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none z-10">
-                    <span className="pill pill-ok text-[10px] font-mono font-bold">
-                      Score {score}
-                    </span>
-                    {durationSec > 0 && (
-                      <span className="pill bg-black/80 border border-rule text-ink text-[10px] font-mono">
-                        {durationSec}s
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Metadata & Actions */}
-                <div className="mt-3 space-y-2.5 min-w-0">
-                  <div className="min-w-0">
-                    <p className="text-xs sm:text-sm font-medium text-ink line-clamp-2 break-words leading-snug">
-                      {clip.title || clip.hook || clip.text || clip.filename}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1 text-[10.5px] text-muted font-mono truncate">
-                      <Clock size={11} className="shrink-0" />
-                      <span className="truncate">{clip.jobDate}</span>
-                    </div>
-                  </div>
-
-                  {/* Action buttons: Download MP4 | SRT | Seperate Individual Delete Button */}
-                  <div className="flex items-center gap-1.5 pt-1.5 border-t border-rule/70">
-                    <button
-                      type="button"
-                      onClick={(e) => handleDownload(e, videoUrl, clip.filename)}
-                      className="flex-1 py-1.5 px-2 bg-paper3 hover:bg-[#ba6238] hover:text-white text-ink rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1 border border-rule cursor-pointer truncate"
-                      title="Download MP4 video"
-                    >
-                      <Download size={12} className="shrink-0" />
-                      <span className="truncate">MP4</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => handleDownload(e, srtUrl, srtFilename)}
-                      className="py-1.5 px-2.5 bg-paper2 hover:bg-paper3 text-muted hover:text-ink rounded-lg text-xs font-mono transition-colors border border-rule cursor-pointer shrink-0"
-                      title="Download Subtitles SRT"
-                    >
-                      SRT
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteClip(clip.jobId, clip.filename)}
-                      className="p-1.5 bg-paper2 hover:bg-err/20 text-muted hover:text-err rounded-lg transition-colors border border-rule shrink-0 cursor-pointer"
-                      title="Delete this clip"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {filteredClips.map((clip, index) => (
+            <HistoryClipCard
+              key={`${clip.jobId}-${clip.filename}-${index}`}
+              clip={clip}
+              onDownload={handleDownload}
+              onDelete={handleDeleteClip}
+            />
+          ))}
         </div>
       )}
     </div>

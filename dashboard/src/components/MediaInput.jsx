@@ -159,12 +159,16 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
     };
   }, [url]);
 
-  // Instant fetch on paste event
+  // Instant fetch on paste event (prevent native double-paste duplication)
   const handlePaste = (e) => {
-    const pasted = e.clipboardData.getData('text');
-    if (pasted && /^https?:\/\//i.test(pasted.trim())) {
-      setUrl(pasted.trim());
-      fetchVideoInfo(pasted.trim());
+    e.preventDefault();
+    const pasted = (e.clipboardData.getData('text') || '').trim();
+    if (pasted) {
+      setUrl(pasted);
+      if (fetchError) setFetchError(null);
+      if (/^https?:\/\//i.test(pasted)) {
+        fetchVideoInfo(pasted);
+      }
     }
   };
 
@@ -219,9 +223,9 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
     };
 
     if (mode === 'upload' && file) {
-      onProcess({ type: 'file', payload: file, options });
+      onProcess({ type: 'file', payload: file, options, videoInfo: null });
     } else if (mode === 'url' && url.trim() && videoInfo) {
-      onProcess({ type: 'url', payload: url.trim(), options });
+      onProcess({ type: 'url', payload: url.trim(), options, videoInfo });
     }
   };
 
@@ -638,41 +642,14 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                         {/* Bottom Black Gradient Shadow Overlay */}
                         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none" />
 
-                        {/* Top Badges */}
-                        <div className="relative z-10 flex items-center justify-between p-3.5 pointer-events-none">
-                          <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-mono text-white/90 border border-white/10 shadow flex items-center gap-1.5">
-                            {/youtube\.com|youtu\.be/i.test(videoInfo.webpage_url || url) ? (
-                              <>
-                                <Youtube size={12} className="text-red-500 shrink-0" />
-                                <span>YouTube</span>
-                              </>
-                            ) : /vimeo\.com/i.test(videoInfo.webpage_url || url) ? (
-                              <>
-                                <Tv size={12} className="text-sky-400 shrink-0" />
-                                <span>Vimeo</span>
-                              </>
-                            ) : /instagram\.com/i.test(videoInfo.webpage_url || url) ? (
-                              <>
-                                <Instagram size={12} className="text-pink-400 shrink-0" />
-                                <span>Instagram</span>
-                              </>
-                            ) : /\.(mp4|webm|mov|m4v)/i.test(videoInfo.webpage_url || url) ? (
-                              <>
-                                <FileVideo size={12} className="text-amber-400 shrink-0" />
-                                <span>Direct Video</span>
-                              </>
-                            ) : (
-                              <>
-                                <Tv size={12} className="text-emerald-400 shrink-0" />
-                                <span>Web Video</span>
-                              </>
-                            )}
-                          </span>
-
-                          <span className="px-2.5 py-1 rounded-full bg-black/80 backdrop-blur-md text-[11px] font-mono font-bold text-white border border-white/10 shadow flex items-center gap-1">
-                            <Clock size={11} className="text-white/70" />
-                            <span>{formatDuration(videoInfo.duration)}</span>
-                          </span>
+                        {/* Top Duration Badge (Platform tag removed per user preference) */}
+                        <div className="relative z-10 flex items-center justify-end p-3.5 pointer-events-none">
+                          {videoInfo.duration > 0 && (
+                            <span className="px-2.5 py-1 rounded-full bg-black/80 backdrop-blur-md text-[11px] font-mono font-bold text-white border border-white/10 shadow flex items-center gap-1">
+                              <Clock size={11} className="text-white/70" />
+                              <span>{formatDuration(videoInfo.duration)}</span>
+                            </span>
+                          )}
                         </div>
 
                         {/* Subtle Center Play Glass Icon */}
@@ -691,12 +668,8 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                           <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
                             <div className="flex items-center gap-1.5 text-xs text-white/80 font-mono">
                               <User size={13} className="text-[#ba6238] shrink-0" />
-                              <span className="truncate max-w-[170px]">{videoInfo.uploader}</span>
+                              <span className="truncate max-w-[240px]">{videoInfo.uploader}</span>
                             </div>
-
-                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 font-mono text-[10.5px] font-semibold flex items-center gap-1 shadow-sm">
-                              <Check size={11} /> Ready to Clip
-                            </span>
                           </div>
                         </div>
                       </div>

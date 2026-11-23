@@ -217,4 +217,22 @@ def new_job_dir(job_id: str) -> Path:
 
 
 def delete_job(job_dir: Path) -> None:
-    shutil.rmtree(job_dir, ignore_errors=True)
+    if not job_dir.exists():
+        return
+
+    def _handle_remove_readonly(func, path, exc):
+        import stat
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except Exception:
+            pass
+
+    for _ in range(3):
+        try:
+            shutil.rmtree(job_dir, onerror=_handle_remove_readonly)
+            break
+        except Exception:
+            time.sleep(0.05)
+    if job_dir.exists():
+        shutil.rmtree(job_dir, ignore_errors=True)

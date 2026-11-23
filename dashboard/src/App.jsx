@@ -137,7 +137,14 @@ export default function App() {
         if (localPreviewUrlRef.current) {
           data.previewUrl = localPreviewUrlRef.current;
         }
-        setActiveJob(data);
+        setActiveJob((prev) => ({
+          ...data,
+          source: {
+            ...prev?.source,
+            ...data.source,
+            thumbnail: data.source?.thumbnail || prev?.source?.thumbnail || null,
+          },
+        }));
 
         updateStructuredLogs(data.status, data.progress || 0, data.message);
 
@@ -170,7 +177,7 @@ export default function App() {
     pollTimerRef.current = setInterval(tick, 1500);
   };
 
-  const handleProcess = async ({ type, payload, options }) => {
+  const handleProcess = async ({ type, payload, options, videoInfo }) => {
     setError(null);
     if (localPreviewUrlRef.current) {
       URL.revokeObjectURL(localPreviewUrlRef.current);
@@ -184,6 +191,21 @@ export default function App() {
         console.warn('Could not create preview object URL:', e);
       }
     }
+
+    // Immediately seed activeJob with thumbnail & metadata from Generator page
+    setActiveJob({
+      status: 'downloading',
+      progress: 0,
+      message: 'Initializing video analysis pipeline...',
+      title: videoInfo?.title || (type === 'file' ? payload.name : 'Processing Video'),
+      url: type === 'url' ? payload : '',
+      source: {
+        thumbnail: videoInfo?.thumbnail || null,
+        title: videoInfo?.title || (type === 'file' ? payload.name : 'Processing Video'),
+        uploader: videoInfo?.uploader || null,
+      },
+      previewUrl: localPreviewUrlRef.current,
+    });
 
     setLogs([
       {

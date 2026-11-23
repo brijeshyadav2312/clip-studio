@@ -91,88 +91,90 @@ export default function ProcessingAnimation({
               </span>
             </div>
 
-            {/* Blueprint Video Scan Canvas */}
-            <div className="relative aspect-video rounded-xl border border-rule overflow-hidden bg-black/95 flex items-center justify-center">
-              {/* Media Background based on Setting Configuration */}
-              {previewMode === 'video_autoplay' && videoSrc ? (
-                <video
-                  src={videoSrc}
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  className="absolute inset-0 w-full h-full object-cover opacity-50 pointer-events-none"
-                />
-              ) : previewMode !== 'cyber_wireframe' && thumbSrc ? (
-                <img
-                  src={thumbSrc}
-                  alt="Video analysis frame"
-                  className="absolute inset-0 w-full h-full object-cover opacity-50 pointer-events-none"
-                />
-              ) : null}
+            {/* Cinematic Vertical Reveal Analysis Canvas */}
+            <div className="relative aspect-video rounded-xl border border-rule overflow-hidden bg-black flex items-center justify-center shadow-2xl select-none group">
+              {thumbSrc || videoSrc ? (
+                <>
+                  {/* BASE LAYER: Dark, dimmed, slightly desaturated preview */}
+                  {previewMode === 'video_autoplay' && videoSrc ? (
+                    <video
+                      src={videoSrc}
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      className="absolute inset-0 w-full h-full object-cover filter brightness-[0.25] saturate-[0.5] blur-[1px] pointer-events-none"
+                    />
+                  ) : (
+                    <img
+                      src={thumbSrc}
+                      alt="Thumbnail dark base"
+                      className="absolute inset-0 w-full h-full object-cover filter brightness-[0.25] saturate-[0.5] blur-[1px] pointer-events-none"
+                    />
+                  )}
 
-              {/* Background Grid Lines */}
-              <div
-                className="absolute inset-0 pointer-events-none opacity-20"
-                style={{
-                  backgroundImage:
-                    'linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px)',
-                  backgroundSize: '32px 32px',
-                }}
-              />
+                  {/* VIBRANT REVEAL LAYER: Exposes vertically as progress increases from 0% to 100% */}
+                  <div
+                    className="absolute inset-0 pointer-events-none transition-all duration-500 ease-out"
+                    style={{
+                      clipPath: `inset(0 0 ${100 - Math.min(100, Math.max(0, progress))}% 0)`,
+                    }}
+                  >
+                    {previewMode === 'video_autoplay' && videoSrc ? (
+                      <video
+                        src={videoSrc}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover filter brightness-[1.05] saturate-[1.15]"
+                      />
+                    ) : (
+                      <img
+                        src={thumbSrc}
+                        alt="Thumbnail reveal"
+                        className="w-full h-full object-cover filter brightness-[1.05] saturate-[1.15]"
+                      />
+                    )}
+                  </div>
 
-              {/* Vertical 9:16 Crop Guides */}
-              <div className="absolute inset-y-0 w-1/3 border-x border-dashed border-[#ba6238]/60 bg-[#ba6238]/5 flex flex-col items-center justify-center pointer-events-none">
-                <div className="w-12 h-12 rounded-full border border-[#ba6238]/70 flex items-center justify-center relative">
-                  <div className="w-2 h-2 rounded-full bg-[#ba6238] animate-ping" />
-                  <Scissors size={18} className="text-[#ba6238] absolute" />
+                  {/* Glowing Laser Reveal Edge Line (moves vertically with progress) */}
+                  {!isDone && !isError && progress > 0 && progress < 100 && (
+                    <div
+                      className="absolute left-0 right-0 h-[2.5px] pointer-events-none transition-all duration-500 ease-out z-20"
+                      style={{
+                        top: `${progress}%`,
+                        background: 'linear-gradient(90deg, transparent, #ba6238 20%, #f59e0b 50%, #ba6238 80%, transparent)',
+                        boxShadow: '0 0 14px 3px rgba(186, 98, 56, 0.9), 0 0 28px 6px rgba(245, 158, 11, 0.6)',
+                      }}
+                    />
+                  )}
+                </>
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 text-muted space-y-2">
+                  <Tv size={36} className="text-muted/60" />
+                  <span className="text-xs font-mono">Preparing video frame...</span>
                 </div>
-              </div>
-
-              {/* Laser Scanning Line */}
-              {!isDone && !isError && (
-                <div className="absolute left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[#ba6238] to-transparent shadow-[0_0_12px_2px_var(--color-glow)] animate-scan pointer-events-none" />
               )}
 
-              {/* Telemetry Readouts */}
-              <div className="absolute top-3 left-3 z-10 pointer-events-none max-w-[45%] truncate">
-                <span className="readout text-[10px] sm:text-[11px] text-muted uppercase tracking-wider flex items-center gap-1.5 font-mono truncate">
-                  <span className="text-[#ba6238]">[ ]</span>{' '}
-                  {isError ? 'PROCESS STOPPED' : isDone ? 'ANALYSIS COMPLETE' : 'SCANNING CONTENT...'}
+              {/* Minimal Top Badges Overlay */}
+              <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
+                <span className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-[10.5px] font-mono text-white/90 border border-white/10 shadow flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isDone ? 'bg-emerald-400' : isError ? 'bg-red-400' : 'bg-[#ba6238] animate-ping'}`} />
+                  <span>{isError ? 'Stopped' : isDone ? '100% Analyzed' : `${Math.round(progress)}% Processed`}</span>
+                </span>
+
+                <span className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-[10.5px] font-mono font-bold text-amber-400 border border-white/10 shadow truncate max-w-[200px]">
+                  {job?.title ? String(job.title).slice(0, 28) : 'Active Stream'}
                 </span>
               </div>
 
-              <div className="absolute top-3 right-3 z-10 pointer-events-none max-w-[45%] text-right truncate">
-                <span
-                  className={`readout text-[10px] sm:text-[11px] uppercase tracking-wider font-mono truncate ${
-                    isError ? 'text-err' : 'text-[#ba6238]'
-                  }`}
-                >
-                  {isError ? 'ENGINE: OFFLINE' : 'VIRAL_DETECTION: ACTIVE'}
-                </span>
-              </div>
+              {/* Bottom Subtle Gradient for Text Contrast */}
+              <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none z-10" />
 
-              <div className="absolute bottom-3 left-3 z-10 pointer-events-none space-y-0.5 max-w-[65%] truncate">
-                <div className="readout text-[10px] sm:text-[11px] text-muted tracking-wider font-mono truncate">
-                  &gt; ANALYSIS_THREAD_01: {isError ? 'FAILED' : 'ACTIVE'}
-                </div>
-                <div
-                  className={`readout text-[10px] sm:text-[11px] tracking-wider font-mono truncate ${
-                    isError ? 'text-err/90' : 'text-[#ba6238]/90'
-                  }`}
-                >
-                  &gt; AUDIO_TRANSCRIPT: {isError ? 'STOPPED' : isDone ? 'READY' : 'PROCESSING'}
-                </div>
-              </div>
-
-
-              {/* Waveform Equalizer */}
-              <div className="absolute bottom-3 right-3 z-10 flex items-end gap-1 h-3.5 pointer-events-none">
-                <div className="w-1 h-3 bg-[#ba6238] animate-pulse" />
-                <div className="w-1 h-5 bg-[#ba6238] animate-pulse" style={{ animationDelay: '150ms' }} />
-                <div className="w-1 h-2 bg-[#ba6238] animate-pulse" style={{ animationDelay: '300ms' }} />
-                <div className="w-1 h-4 bg-[#ba6238] animate-pulse" style={{ animationDelay: '450ms' }} />
-                <div className="w-1 h-3 bg-[#ba6238] animate-pulse" style={{ animationDelay: '200ms' }} />
+              <div className="absolute bottom-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none text-[11px] font-mono text-white/90">
+                <span className="truncate max-w-[70%]">{job?.message || 'Processing...'}</span>
+                <span className="text-amber-400 font-bold shrink-0">{progress}%</span>
               </div>
             </div>
 

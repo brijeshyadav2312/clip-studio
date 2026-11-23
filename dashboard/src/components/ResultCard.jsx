@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Download, FileText, Trash2, Play, Pause, Volume2, VolumeX, Sparkles, Clock } from 'lucide-react';
 
 export default function ResultCard({ clip = {}, jobId = '', onDelete }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const videoRef = useRef(null);
 
   const filename =
     clip.filename ||
@@ -20,6 +21,34 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete }) {
     (clip.srt ? `/media/${jobId}/${clip.srt}` : `/media/${jobId}/clips/${srtFilename}`);
 
   const thumbUrl = clip.thumb_url || (clip.thumb ? `/media/${jobId}/${clip.thumb}` : null);
+
+  const handlePlay = (e) => {
+    setIsPlaying(true);
+    // Pause all other videos on the page so only one plays at a time
+    document.querySelectorAll('video').forEach((v) => {
+      if (v !== e.target && !v.paused) {
+        v.pause();
+      }
+    });
+  };
+
+  const handlePause = () => {
+    setIsPlaying(false);
+  };
+
+  const togglePlay = (e) => {
+    // Avoid double toggling if clicked directly on native control bar
+    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      document.querySelectorAll('video').forEach((v) => {
+        if (v !== videoRef.current && !v.paused) v.pause();
+      });
+      videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
+    }
+  };
 
   const handleDelete = async (e) => {
     e.stopPropagation();
@@ -57,17 +86,30 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete }) {
 
   return (
     <div className="card p-3 border border-rule2 bg-[#0e1015] hover:border-[#ba6238]/50 transition-colors rounded-2xl group flex flex-col justify-between">
-      {/* Video Container (9:16 Portrait) */}
-      <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black flex items-center justify-center border border-rule group/video">
+      {/* Video Container (9:16 Portrait, fully clickable) */}
+      <div
+        onClick={togglePlay}
+        className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black flex items-center justify-center border border-rule group/video cursor-pointer"
+      >
         <video
+          ref={videoRef}
           src={videoUrl || undefined}
           poster={thumbUrl || undefined}
           controls
           preload="metadata"
           className="w-full h-full object-cover"
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
+          onPlay={handlePlay}
+          onPause={handlePause}
         />
+
+        {/* Center Glass Play Button Overlay (visible when paused or hover) */}
+        {!isPlaying && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20 group-hover/video:bg-black/40 transition-colors">
+            <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-2xl group-hover/video:scale-110 transition-transform">
+              <Play size={20} className="fill-white ml-0.5" />
+            </div>
+          </div>
+        )}
 
         {/* Top Badges */}
         <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none z-10">

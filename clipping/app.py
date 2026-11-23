@@ -280,8 +280,9 @@ def _job_path(job_id: str) -> Path:
     return path
 
 
-def _normalize_clips(job_id: str, clips: list[dict]) -> list[dict]:
+def _normalize_clips(job_id: str, clips: list[dict], check_exists: bool = False) -> list[dict]:
     normalized = []
+    job_dir = JOBS_DIR / job_id
     for c in (clips or []):
         if not isinstance(c, dict):
             continue
@@ -289,6 +290,13 @@ def _normalize_clips(job_id: str, clips: list[dict]) -> list[dict]:
         video_path = c.get("video") or ""
         fname = c.get("filename") or (Path(video_path).name if video_path else f"{c.get('slug', 'clip')}.mp4")
         c_copy["filename"] = fname
+
+        if check_exists:
+            v1 = job_dir / video_path if video_path else None
+            v2 = job_dir / "clips" / fname
+            if not ((v1 and v1.exists()) or (v2 and v2.exists())):
+                continue
+
         if "url" not in c_copy:
             c_copy["url"] = f"/media/{job_id}/{video_path}" if video_path else f"/media/{job_id}/clips/{fname}"
         if "srt_url" not in c_copy:
@@ -427,7 +435,7 @@ def list_jobs() -> list[dict]:
                 continue
         if not data:
             continue
-        clips_data = _normalize_clips(data.get("id", job_id), data.get("clips") or [])
+        clips_data = _normalize_clips(data.get("id", job_id), data.get("clips") or [], check_exists=True)
         jobs.append({
             "id": data.get("id", job_id),
             "status": data.get("status", "unknown"),
@@ -453,7 +461,7 @@ def delete_all_jobs() -> dict:
     deleted = []
     with LOCK:
         JOB_CACHE.clear()
-        for path in JOBS_DIR.iterdir():
+        for path in list(JOBS_DIR.iterdir()):
             if path.is_dir():
                 try:
                     pipeline.delete_job(path)
