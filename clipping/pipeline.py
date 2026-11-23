@@ -136,15 +136,16 @@ def process(
 
             start, end = clip["start"], clip["end"]
             words = highlights._words_in(transcript["segments"], start, end)
+
+            plan = reframe.plan(source, start, end, info, settings)
             ass_path, muted = captions.build(
                 words, start, end, settings,
                 clip_dir / f"{clip['slug']}.ass",
                 hook=hook_override or clip.get("hook") or None,
                 censor=censor,
+                layout=plan.get("mode", "auto"),
             )
             render.srt_from_words(words, start, end, clip_dir / f"{clip['slug']}.srt")
-
-            plan = reframe.plan(source, start, end, info, settings)
             sendcmd = None
             if plan["mode"] == "crop" and plan["samples"]:
                 sendcmd = reframe.write_sendcmd(plan["samples"], rf_dir / f"{clip['slug']}.txt")

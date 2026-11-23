@@ -23,10 +23,18 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
     dest_dir.mkdir(parents=True, exist_ok=True)
     template = str(dest_dir / "source.%(ext)s")
 
+    import time
+    last_hook_time = 0.0
+
     def hook(data: dict) -> None:
+        nonlocal last_hook_time
         if progress is None:
             return
+        now = time.time()
         if data.get("status") == "downloading":
+            if now - last_hook_time < 0.4:
+                return
+            last_hook_time = now
             total = data.get("total_bytes") or data.get("total_bytes_estimate") or 0
             done = data.get("downloaded_bytes") or 0
             pct = (done / total * 100.0) if total else 0.0

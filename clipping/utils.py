@@ -107,19 +107,24 @@ def srt_time(seconds: float) -> str:
 
 def write_json(path: Path, data: Any) -> None:
     """Atomic write on Windows/POSIX with fallback to avoid file locking collisions."""
+    import uuid
     content = json.dumps(data, indent=2, ensure_ascii=False)
-    tmp = path.with_suffix(f".tmp-{time.time_ns() % 1000000}")
+    tmp = path.with_suffix(f".tmp-{uuid.uuid4().hex}")
     try:
         tmp.write_text(content, encoding="utf-8")
-        for _ in range(5):
+        for _ in range(6):
             try:
                 import os
                 os.replace(tmp, path)
                 return
             except (PermissionError, OSError):
                 time.sleep(0.02)
-        # Fallback if replace is held
-        path.write_text(content, encoding="utf-8")
+        try:
+            path.write_text(content, encoding="utf-8")
+        except Exception:
+            pass
+    except Exception as exc:
+        log(f"[utils] write_json warning for {path.name}: {exc}")
     finally:
         try:
             if tmp.exists():

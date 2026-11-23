@@ -328,6 +328,25 @@
           </select>
           <div class="field-desc">Burned-in animated typography</div>
         </div>
+        <div class="field">
+          <label>AI Whisper Model</label>
+          <select id="whisper_model">
+            <option value="base">Base (Fastest · ~10s/min · Lightweight)</option>
+            <option value="small">Small (High Accuracy · Best for Accents)</option>
+            <option value="medium">Medium (Pro Accuracy · Slang & Jargon)</option>
+          </select>
+          <div class="field-desc">Speech-to-text precision model</div>
+        </div>
+        <div class="field">
+          <label>Subtitle Position</label>
+          <select id="caption_position">
+            <option value="auto">Auto (Smart: Under Divider / Lower Blur / Lower Third)</option>
+            <option value="divider">Under Divider (Best for Streamer Split)</option>
+            <option value="bottom">Lower Third (Classic Subtitles)</option>
+            <option value="middle">Center Screen (Viral TikTok Hook)</option>
+          </select>
+          <div class="field-desc">Adaptive layout-aware vertical placement</div>
+        </div>
 
         <!-- Section 1: Framing & Camera Stabilization -->
         <div class="section-divider">
@@ -607,6 +626,8 @@ function options() {
     streamer_cam_shape: $("streamer_cam_shape").value,
     streamer_bg: $("streamer_bg").value,
     caption_style: $("style").value,
+    caption_position: $("caption_position").value,
+    whisper_model: $("whisper_model").value,
     hook: ($("hook").value || "").trim() || null,
     censor: $("censor").checked,
   };
@@ -850,6 +871,7 @@ function setTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   $("tab-url").classList.toggle("hidden", name !== "url");
   $("tab-file").classList.toggle("hidden", name !== "file");
+  updateButtons();
 }
 
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => setTab(tab.dataset.tab)));

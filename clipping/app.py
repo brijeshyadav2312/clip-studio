@@ -52,6 +52,8 @@ class JobRequest(BaseModel):
     streamer_cam_shape: str | None = None
     streamer_bg: str | None = None
     streamer_theme: str | None = None
+    caption_position: str | None = None
+    whisper_model: str | None = None
     censor: bool = False
     hook: str | None = None
     title: str | None = None
@@ -239,6 +241,8 @@ def create_job(req: JobRequest) -> dict:
         streamer_cam_shape=req.streamer_cam_shape,
         streamer_bg=req.streamer_bg,
         streamer_theme=req.streamer_theme,
+        caption_position=req.caption_position,
+        whisper_model=req.whisper_model,
     )
     job_id = _start(settings, url, None, req.hook, req.censor, req.title)
     return {"id": job_id}
@@ -262,6 +266,8 @@ async def create_upload_job(
     streamer_cam_shape: str | None = Form(default=None),
     streamer_bg: str | None = Form(default=None),
     streamer_theme: str | None = Form(default=None),
+    caption_position: str | None = Form(default=None),
+    whisper_model: str | None = Form(default=None),
     censor: bool = Form(default=False),
     hook: str | None = Form(default=None),
     title: str | None = Form(default=None),
@@ -299,6 +305,8 @@ async def create_upload_job(
         streamer_cam_shape=streamer_cam_shape,
         streamer_bg=streamer_bg,
         streamer_theme=streamer_theme,
+        caption_position=caption_position,
+        whisper_model=whisper_model,
     )
     job_id = _start(settings, None, tmp, hook, censor, title or file.filename)
     return {"id": job_id, "duration": info["duration"]}

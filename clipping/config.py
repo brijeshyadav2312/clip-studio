@@ -45,6 +45,7 @@ class Settings:
     crf: int = _int("CLIP_CRF", 20)
     preset: str = os.getenv("CLIP_PRESET", "veryfast")
     caption_style: str = os.getenv("CLIP_CAPTION_STYLE", "wordpop")
+    caption_position: str = os.getenv("CLIP_CAPTION_POSITION", "auto")
     font: str = os.getenv("CLIP_FONT", "Arial Black")
     hook_sec: float = _float("CLIP_HOOK_SEC", 3.5)
     # Layout & reframing
@@ -125,6 +126,7 @@ class Settings:
             "streamer_theme": self.streamer_theme,
             "streamer_pip_size": self.streamer_pip_size,
             "caption_style": self.caption_style,
+            "caption_position": self.caption_position,
             "whisper_model": self.whisper_model,
             "llm_provider": self.llm_provider,
         }

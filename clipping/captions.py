@@ -30,9 +30,9 @@ YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},3,2,70,70,300,1
-Style: Clean,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,3,2,2,80,80,280,1
-Style: Hook,{font},72,&H00FFFFFF,&H00FFFFFF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,3,16,0,8,60,60,150,1
+Style: Cap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},3,2,70,70,{margin_v},1
+Style: Clean,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,3,2,2,80,80,{margin_v_clean},1
+Style: Hook,{font},72,&H00FFFFFF,&H00FFFFFF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,3,16,0,8,60,60,{margin_hook},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -94,6 +94,7 @@ def build(
     out_path: Path,
     hook: str | None = None,
     censor: bool = False,
+    layout: str = "auto",
 ) -> tuple[Path, list[tuple[float, float]]]:
     """Write an .ass file for the clip. Returns (path, muted_ranges)."""
     style_name = settings.caption_style if settings.caption_style in STYLES else "wordpop"
@@ -120,7 +121,38 @@ def build(
 
     outline = 8 if style_name != "clean" else 3
     font = settings.font or "Arial Black"
-    header = HEADER.format(font=font, size=style["size"], outline=outline)
+
+    # Dynamic vertical position based on layout and settings
+    pos = getattr(settings, "caption_position", "auto")
+    if pos == "divider" or (pos == "auto" and layout == "streamer_split"):
+        margin_v = 780      # Sits directly under streamer split line, clear of gameplay action & HUD
+        margin_v_clean = 760
+        margin_hook = 180
+    elif pos == "middle":
+        margin_v = 860      # Centered vertically in video
+        margin_v_clean = 840
+        margin_hook = 150
+    elif pos == "bottom" or (pos == "auto" and layout != "streamer_split"):
+        if layout == "fit_blur":
+            margin_v = 260  # Sits inside the lower blurred bar, leaving 16:9 main video clean
+            margin_v_clean = 240
+        else:
+            margin_v = 300  # Standard lower third
+            margin_v_clean = 280
+        margin_hook = 150
+    else:
+        margin_v = 300
+        margin_v_clean = 280
+        margin_hook = 150
+
+    header = HEADER.format(
+        font=font,
+        size=style["size"],
+        outline=outline,
+        margin_v=margin_v,
+        margin_v_clean=margin_v_clean,
+        margin_hook=margin_hook,
+    )
 
     events: list[str] = []
     if hook:

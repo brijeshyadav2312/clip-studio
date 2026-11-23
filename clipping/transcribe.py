@@ -27,7 +27,8 @@ def _device(settings: Settings) -> str:
 
 
 def _load_model(settings: Settings):
-    key = (settings.whisper_model, _device(settings), settings.whisper_compute)
+    model_name = settings.whisper_model or "base"
+    key = (model_name, _device(settings), settings.whisper_compute)
     if key not in _MODEL_CACHE:
         try:
             from faster_whisper import WhisperModel
@@ -35,13 +36,27 @@ def _load_model(settings: Settings):
             raise ToolError("faster-whisper is not installed. Run: pip install faster-whisper") from exc
 
         device, compute = key[1], key[2]
-        log(f"[asr] loading {settings.whisper_model} on {device}/{compute}")
-        _MODEL_CACHE[key] = WhisperModel(
-            settings.whisper_model,
-            device=device,
-            compute_type=compute,
-            cpu_threads=settings.whisper_threads,
-        )
+        log(f"[asr] loading {model_name} on {device}/{compute}")
+        try:
+            _MODEL_CACHE[key] = WhisperModel(
+                model_name,
+                device=device,
+                compute_type=compute,
+                cpu_threads=settings.whisper_threads,
+            )
+        except Exception as exc:
+            if model_name != "base":
+                log(f"[asr] failed to load '{model_name}' ({exc}); gracefully falling back to 'base' model")
+                fallback_key = ("base", device, compute)
+                if fallback_key not in _MODEL_CACHE:
+                    _MODEL_CACHE[fallback_key] = WhisperModel(
+                        "base",
+                        device=device,
+                        compute_type=compute,
+                        cpu_threads=settings.whisper_threads,
+                    )
+                return _MODEL_CACHE[fallback_key]
+            raise
     return _MODEL_CACHE[key]
 
 

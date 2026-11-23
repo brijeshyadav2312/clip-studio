@@ -568,7 +568,8 @@ def plan(
     corner_cam = _detect_corner_webcam(all_detections, src_w, src_h)
 
     # Determine layout mode
-    if settings.layout == "streamer_split" or (settings.layout == "auto" and corner_cam is not None):
+    # 1. Explicit layout selections:
+    if settings.layout == "streamer_split":
         streamer_crops = _compute_streamer_crops(src_w, src_h, corner_cam, settings)
         log(
             f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s streamer mode enabled "
@@ -582,7 +583,7 @@ def plan(
             "streamer": streamer_crops,
             "face_ratio": round(face_ratio, 3),
             "wide_ratio": round(wide_ratio, 3),
-            "reason": f"corner facecam detected in {streamer_crops['corner']}",
+            "reason": f"streamer split mode (cam {streamer_crops['corner']})",
         }
 
     if settings.layout == "streamer_pip":
@@ -598,28 +599,7 @@ def plan(
             "reason": "streamer picture-in-picture mode",
         }
 
-    # Content-Aware Slide / Text / Graphic Detection:
-    # If wide on-screen text, title slides, presentation graphics, or diagrams are present,
-    # or if there is no dominant face, a 9:16 vertical crop cuts off words and diagrams!
-    # Automatically switch to fit_blur so 100% of the graphic/text is visible!
-    if settings.layout == "auto" and (wide_ratio >= 0.10 or face_ratio < 0.25):
-        log(
-            f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s wide text/slide detected "
-            f"(wide: {wide_ratio*100:.0f}%, faces: {face_ratio*100:.0f}%) -> fit_blur"
-        )
-        return {
-            "mode": "fit_blur",
-            "crop_w": src_w,
-            "crop_h": src_h,
-            "scaled_w": sw,
-            "samples": [],
-            "face_ratio": round(face_ratio, 3),
-            "wide_ratio": round(wide_ratio, 3),
-            "reason": f"On-screen text / slide / graphic detected (wide: {int(wide_ratio*100)}%) - preserved in full frame",
-        }
-
-    # If user explicitly configured gameplay center
-    if face_ratio < 0.20 and settings.streamer_game_focus in ("center", "center_low"):
+    if settings.layout == "gameplay_center":
         crop_w_src = src_h * ratio
         gx = max(0.0, (src_w - crop_w_src) / 2.0)
         return {
@@ -631,8 +611,77 @@ def plan(
             "samples": [],
             "face_ratio": round(face_ratio, 3),
             "wide_ratio": round(wide_ratio, 3),
-            "reason": "No face found, locked to central gameplay action",
+            "reason": "Explicit gameplay_center layout: locked to center action (vehicle / crosshair)",
         }
+
+    if settings.layout in ("fit_blur", "blur", "gameplay_blur"):
+        return {
+            "mode": "fit_blur",
+            "crop_w": src_w,
+            "crop_h": src_h,
+            "scaled_w": sw,
+            "samples": [],
+            "face_ratio": round(face_ratio, 3),
+            "wide_ratio": round(wide_ratio, 3),
+            "reason": f"Explicit layout: {settings.layout}",
+        }
+
+    # 2. Smart Content-Aware Auto-Detection Mode:
+    if settings.layout == "auto":
+        # A. Gaming Streamer Auto-Detection (webcam in corner)
+        if corner_cam is not None:
+            streamer_crops = _compute_streamer_crops(src_w, src_h, corner_cam, settings)
+            log(
+                f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s auto-detected gaming streamer "
+                f"(webcam: {streamer_crops['corner']}, split: {settings.streamer_split_ratio})"
+            )
+            return {
+                "mode": "streamer_split",
+                "crop_w": crop_w,
+                "crop_h": crop_h,
+                "scaled_w": sw,
+                "streamer": streamer_crops,
+                "face_ratio": round(face_ratio, 3),
+                "wide_ratio": round(wide_ratio, 3),
+                "reason": f"Auto-detected streamer webcam in {streamer_crops['corner']}",
+            }
+
+        # B. On-Screen Text / Slides / Presentation Graphics / Sports Scoreboards
+        if wide_ratio >= 0.10:
+            log(
+                f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s wide text/slide detected "
+                f"(wide: {wide_ratio*100:.0f}%, faces: {face_ratio*100:.0f}%) -> fit_blur"
+            )
+            return {
+                "mode": "fit_blur",
+                "crop_w": src_w,
+                "crop_h": src_h,
+                "scaled_w": sw,
+                "samples": [],
+                "face_ratio": round(face_ratio, 3),
+                "wide_ratio": round(wide_ratio, 3),
+                "reason": f"On-screen text / slide / graphic detected (wide: {int(wide_ratio*100)}%)",
+            }
+
+        # C. Pure Gameplay / Action / No Face detected
+        if face_ratio < 0.20:
+            crop_w_src = src_h * ratio
+            gx = max(0.0, (src_w - crop_w_src) / 2.0)
+            log(
+                f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s no face detected (faces: {face_ratio*100:.0f}%) "
+                f"-> auto gameplay_center"
+            )
+            return {
+                "mode": "gameplay_center",
+                "crop_w": crop_w,
+                "crop_h": crop_h,
+                "scaled_w": sw,
+                "src_crop": (int(round(gx)), 0, int(round(crop_w_src)), src_h),
+                "samples": [],
+                "face_ratio": round(face_ratio, 3),
+                "wide_ratio": round(wide_ratio, 3),
+                "reason": "No face detected in video -> auto-locked to center gameplay/action",
+            }
 
     # Standard / Podcast Speaker Mode with Rock-Solid Stabilization
     samples = _resample_and_smooth(
