@@ -133,7 +133,7 @@ def build(
         margin_v_clean = 840
         margin_hook = 150
     elif pos == "bottom" or (pos == "auto" and layout != "streamer_split"):
-        if layout == "fit_blur":
+        if layout in ("fit_blur", "dynamic_landscape"):
             margin_v = 260  # Sits inside the lower blurred bar, leaving 16:9 main video clean
             margin_v_clean = 240
         else:

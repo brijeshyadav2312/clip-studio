@@ -46,6 +46,7 @@ class Settings:
     preset: str = os.getenv("CLIP_PRESET", "veryfast")
     caption_style: str = os.getenv("CLIP_CAPTION_STYLE", "wordpop")
     caption_position: str = os.getenv("CLIP_CAPTION_POSITION", "auto")
+    subtitle_script: str = os.getenv("CLIP_SUBTITLE_SCRIPT", "auto")
     font: str = os.getenv("CLIP_FONT", "Arial Black")
     hook_sec: float = _float("CLIP_HOOK_SEC", 3.5)
     # Layout & reframing
@@ -127,6 +128,7 @@ class Settings:
             "streamer_pip_size": self.streamer_pip_size,
             "caption_style": self.caption_style,
             "caption_position": self.caption_position,
+            "subtitle_script": self.subtitle_script,
             "whisper_model": self.whisper_model,
             "llm_provider": self.llm_provider,
         }

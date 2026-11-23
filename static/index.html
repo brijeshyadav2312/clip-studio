@@ -347,6 +347,17 @@
           </select>
           <div class="field-desc">Adaptive layout-aware vertical placement</div>
         </div>
+        <div class="field">
+          <label>Subtitle Script / Language</label>
+          <select id="subtitle_script">
+            <option value="auto">Auto Consistent (Hinglish for Hindi/Urdu, English for English)</option>
+            <option value="hinglish">Hinglish (Hindi in English/Latin letters - No Urdu/Arabic mix)</option>
+            <option value="en_translate">Translate to English (Auto-translate foreign/Hindi speech)</option>
+            <option value="hi">Hindi (Devanagari Script)</option>
+            <option value="original">Original Spoken (As detected)</option>
+          </select>
+          <div class="field-desc">Guarantees consistent alphabet & eliminates script jumping</div>
+        </div>
 
         <!-- Section 1: Framing & Camera Stabilization -->
         <div class="section-divider">
@@ -356,16 +367,17 @@
         <div class="field" style="grid-column: span 2;">
           <label>Layout Mode</label>
           <select id="layout">
-            <option value="auto">Auto (Smart Content-Aware: Text/Slide Safe + Face Track)</option>
-            <option value="fit_blur">Smart Fit + Ambient Blur (100% Text, Slides & Graphics Preserved)</option>
-            <option value="crop">Podcast Speaker Crop (Face-Tracked Vertical)</option>
+            <option value="auto">Auto (Smart Dynamic: Speaker Crop + Full Landscape for Graphs/Slides/Text)</option>
+            <option value="dynamic_landscape">Dynamic Landscape (Full Landscape on Charts/Slides + Vertical on Speaker)</option>
+            <option value="fit_blur">Smart Fit + Ambient Blur (100% Full Landscape for Entire Video)</option>
+            <option value="crop">Podcast Speaker Crop (Face-Tracked Vertical Only)</option>
             <option value="streamer_split">Streamer Split (Webcam Top + Gameplay Bottom) [Shorts standard]</option>
             <option value="gameplay_center">Gameplay Center Action (Locks onto Vehicle / Crosshair / GTA 6)</option>
             <option value="gameplay_blur">Gameplay Full Frame + Blurred Backdrop</option>
             <option value="streamer_pip">Streamer Picture-in-Picture (Floating Facecam)</option>
             <option value="blur">Full Video + Blurred Mirror</option>
           </select>
-          <div class="field-desc">Auto detects on-screen text, slides, and graphics so words and diagrams are NEVER cut off</div>
+          <div class="field-desc">Dynamically zooms out to full landscape whenever an infographic, graph, chart, or slide appears</div>
         </div>
 
         <div class="field" style="grid-column: span 2;">
@@ -627,6 +639,7 @@ function options() {
     streamer_bg: $("streamer_bg").value,
     caption_style: $("style").value,
     caption_position: $("caption_position").value,
+    subtitle_script: $("subtitle_script").value,
     whisper_model: $("whisper_model").value,
     hook: ($("hook").value || "").trim() || null,
     censor: $("censor").checked,

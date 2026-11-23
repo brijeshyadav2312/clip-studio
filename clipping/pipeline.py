@@ -147,7 +147,7 @@ def process(
             )
             render.srt_from_words(words, start, end, clip_dir / f"{clip['slug']}.srt")
             sendcmd = None
-            if plan["mode"] == "crop" and plan["samples"]:
+            if plan["mode"] in ("crop", "dynamic_landscape") and plan.get("samples"):
                 sendcmd = reframe.write_sendcmd(plan["samples"], rf_dir / f"{clip['slug']}.txt")
 
             out = clip_dir / f"{clip['slug']}.mp4"

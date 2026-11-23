@@ -424,8 +424,8 @@ def detect_wide_content(small_frame) -> bool:
     crop_w = int(h * (9.0 / 16.0))
     margin_w = max(10, (w - crop_w) // 2)
 
-    # Canny edges tuned for typography strokes and graphic line borders
-    edges = cv2.Canny(gray, 50, 150)
+    # Canny edges tuned for typography strokes, diagrams, vector shapes, and borders
+    edges = cv2.Canny(gray, 30, 100)
 
     left_margin = edges[:, :margin_w]
     right_margin = edges[:, w - margin_w:]
@@ -434,8 +434,42 @@ def detect_wide_content(small_frame) -> bool:
     left_density = np.count_nonzero(left_margin) / margin_area
     right_density = np.count_nonzero(right_margin) / margin_area
 
-    # If edge density in outer margins exceeds threshold, text/graphics span wide
-    return bool(left_density > 0.0035 or right_density > 0.0035)
+    # Also detect non-uniformity (buttons, boxes, cards, arrows) in outer margins
+    left_gray = gray[:, :margin_w]
+    right_gray = gray[:, w - margin_w:]
+    left_var = float(np.var(left_gray))
+    right_var = float(np.var(right_gray))
+
+    return bool(left_density > 0.0025 or right_density > 0.0025 or left_var > 140 or right_var > 140)
+
+
+def _find_landscape_intervals(samples: list[tuple[float, bool]], min_dur: float = 0.8) -> list[tuple[float, float]]:
+    """Group consecutive landscape/graph/slide frames into continuous intervals [start_sec, end_sec]."""
+    if not samples:
+        return []
+    intervals = []
+    in_block = False
+    block_start = 0.0
+    for t, is_land in samples:
+        if is_land and not in_block:
+            in_block = True
+            block_start = t
+        elif not is_land and in_block:
+            in_block = False
+            if (t - block_start) >= min_dur:
+                intervals.append((round(block_start, 2), round(t, 2)))
+    if in_block and samples:
+        if (samples[-1][0] - block_start) >= min_dur:
+            intervals.append((round(block_start, 2), round(samples[-1][0], 2)))
+
+    # Merge intervals separated by small gap <= 0.6s
+    merged: list[tuple[float, float]] = []
+    for s, e in intervals:
+        if merged and (s - merged[-1][1]) <= 0.6:
+            merged[-1] = (merged[-1][0], e)
+        else:
+            merged.append((s, e))
+    return merged
 
 
 def plan(
@@ -487,6 +521,7 @@ def plan(
     # Sample video frames for face and wide content detection
     raw: list[tuple[float, float | None]] = []
     all_detections: list[list[tuple[int, int, int, int, float]]] = []
+    landscape_samples: list[tuple[float, bool]] = []
     crop_w_src = src_h * ratio
     tracker = SpeakerTracker(dwell_sec=settings.podcast_dwell_sec, sample_fps=SAMPLE_FPS)
     hits = 0
@@ -530,7 +565,8 @@ def plan(
                 small = frame
                 factor = 1.0
 
-            if detect_wide_content(small):
+            is_wide = detect_wide_content(small)
+            if is_wide:
                 wide_hits += 1
 
             faces = [
@@ -538,6 +574,10 @@ def plan(
                 for (fx, fy, fw, fh, score) in detector.detect(small)
             ]
             all_detections.append(faces)
+
+            # Frame is landscape visual if no face detected OR wide graphics/slides span into margins
+            frame_is_landscape = (len(faces) == 0) or is_wide
+            landscape_samples.append((t, frame_is_landscape))
 
             center_src = tracker.update(faces, crop_w_src, src_w)
             if center_src is not None:
@@ -566,6 +606,11 @@ def plan(
     face_ratio = hits / frames if frames else 0.0
     wide_ratio = wide_hits / frames if frames else 0.0
     corner_cam = _detect_corner_webcam(all_detections, src_w, src_h)
+
+    # Dynamic landscape intervals: detect segments where graphics, slides, or B-roll appear
+    landscape_intervals = _find_landscape_intervals(landscape_samples, min_dur=0.8)
+    total_landscape_dur = sum(e - s for s, e in landscape_intervals)
+    landscape_ratio = total_landscape_dur / duration if duration else 0.0
 
     # Determine layout mode
     # 1. Explicit layout selections:
@@ -646,11 +691,11 @@ def plan(
                 "reason": f"Auto-detected streamer webcam in {streamer_crops['corner']}",
             }
 
-        # B. On-Screen Text / Slides / Presentation Graphics / Sports Scoreboards
-        if wide_ratio >= 0.10:
+        # B. Pure Presentation / Full Slide / 100% Graph video (predominantly landscape visuals or minimal faces)
+        if landscape_ratio >= 0.70 or face_ratio < 0.15:
             log(
-                f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s wide text/slide detected "
-                f"(wide: {wide_ratio*100:.0f}%, faces: {face_ratio*100:.0f}%) -> fit_blur"
+                f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s full presentation/graph video "
+                f"(landscape: {landscape_ratio*100:.0f}%, faces: {face_ratio*100:.0f}%) -> fit_blur"
             )
             return {
                 "mode": "fit_blur",
@@ -660,27 +705,32 @@ def plan(
                 "samples": [],
                 "face_ratio": round(face_ratio, 3),
                 "wide_ratio": round(wide_ratio, 3),
-                "reason": f"On-screen text / slide / graphic detected (wide: {int(wide_ratio*100)}%)",
+                "reason": f"Full landscape presentation / infographic / slide video ({int(landscape_ratio*100)}%)",
             }
 
-        # C. Pure Gameplay / Action / No Face detected
-        if face_ratio < 0.20:
-            crop_w_src = src_h * ratio
-            gx = max(0.0, (src_w - crop_w_src) / 2.0)
+        # C. DYNAMIC SMART REFRAMING: Speaker on camera + Graph/Slide/Chart cutaways!
+        # Automatically detects when a video cuts to a full-screen chart, diagram, or slide
+        # and dynamically displays full landscape (fit_blur) so the entire visual is visible!
+        if landscape_intervals and 0.05 <= landscape_ratio < 0.70:
+            samples = _resample_and_smooth(
+                raw, duration, max_x, center_x,
+                fps=PATH_FPS,
+                stabilization=settings.stabilization,
+            )
             log(
-                f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s no face detected (faces: {face_ratio*100:.0f}%) "
-                f"-> auto gameplay_center"
+                f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s dynamic reframing: "
+                f"{len(landscape_intervals)} graph/slide cutaways ({total_landscape_dur:.1f}s) -> dynamic_landscape"
             )
             return {
-                "mode": "gameplay_center",
+                "mode": "dynamic_landscape",
                 "crop_w": crop_w,
                 "crop_h": crop_h,
                 "scaled_w": sw,
-                "src_crop": (int(round(gx)), 0, int(round(crop_w_src)), src_h),
-                "samples": [],
+                "samples": samples,
+                "landscape_intervals": landscape_intervals,
                 "face_ratio": round(face_ratio, 3),
                 "wide_ratio": round(wide_ratio, 3),
-                "reason": "No face detected in video -> auto-locked to center gameplay/action",
+                "reason": f"Dynamic reframing: {len(landscape_intervals)} graph/chart cutaways shown in full landscape",
             }
 
     # Standard / Podcast Speaker Mode with Rock-Solid Stabilization

@@ -53,6 +53,7 @@ class JobRequest(BaseModel):
     streamer_bg: str | None = None
     streamer_theme: str | None = None
     caption_position: str | None = None
+    subtitle_script: str | None = None
     whisper_model: str | None = None
     censor: bool = False
     hook: str | None = None
@@ -242,6 +243,7 @@ def create_job(req: JobRequest) -> dict:
         streamer_bg=req.streamer_bg,
         streamer_theme=req.streamer_theme,
         caption_position=req.caption_position,
+        subtitle_script=req.subtitle_script,
         whisper_model=req.whisper_model,
     )
     job_id = _start(settings, url, None, req.hook, req.censor, req.title)
@@ -267,6 +269,7 @@ async def create_upload_job(
     streamer_bg: str | None = Form(default=None),
     streamer_theme: str | None = Form(default=None),
     caption_position: str | None = Form(default=None),
+    subtitle_script: str | None = Form(default=None),
     whisper_model: str | None = Form(default=None),
     censor: bool = Form(default=False),
     hook: str | None = Form(default=None),
@@ -306,6 +309,7 @@ async def create_upload_job(
         streamer_bg=streamer_bg,
         streamer_theme=streamer_theme,
         caption_position=caption_position,
+        subtitle_script=subtitle_script,
         whisper_model=whisper_model,
     )
     job_id = _start(settings, None, tmp, hook, censor, title or file.filename)

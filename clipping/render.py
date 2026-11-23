@@ -61,6 +61,27 @@ def render_clip(
             f"crop={plan['crop_w']}:{plan['crop_h']}:{x0}:0,"
             f"subtitles={ass},fps={fps},format=yuv420p[v]"
         )
+    elif plan["mode"] == "dynamic_landscape":
+        intervals = plan.get("landscape_intervals", [])
+        enable_expr = "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in intervals) if intervals else "0"
+        sw = plan.get("scaled_w") or 1080
+        x0 = int(plan.get("samples")[0][1]) if plan.get("samples") else 0
+        sendcmd_cmd = f",sendcmd=f={_filter_path(sendcmd_path, work_dir)}" if sendcmd_path else ""
+
+        crop_chain = f"scale={sw}:1920:flags=lanczos{sendcmd_cmd},crop={plan['crop_w']}:{plan['crop_h']}:{x0}:0[crop_str]"
+        fit_chain = (
+            "split=2[bgin][fgin];"
+            "[bgin]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=28[bg_blur];"
+            "[fgin]scale=1080:608:flags=lanczos[fg_fit];"
+            "[bg_blur][fg_fit]overlay=0:656[fit_str]"
+        )
+        video = (
+            f"[0:v]split=2[in_c][in_f];"
+            f"[in_c]{crop_chain};"
+            f"[in_f]{fit_chain};"
+            f"[crop_str][fit_str]overlay=0:0:enable='{enable_expr}',"
+            f"subtitles={ass},fps={fps},format=yuv420p[v]"
+        )
     elif plan["mode"] == "gameplay_center":
         gx, gy, gw, gh = plan.get("src_crop", (0, 0, 1080, 1920))
         video = (
