@@ -8,6 +8,9 @@ import tempfile
 import threading
 import time
 import uuid
+import json as pyjson
+import urllib.parse
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -95,67 +98,120 @@ class UrlInfoRequest(BaseModel):
     url: str
 
 
+# In-memory LRU / TTL cache for video metadata (1 hour TTL)
+_URL_INFO_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def _get_cached_url_info(url: str) -> dict | None:
+    now = time.time()
+    if url in _URL_INFO_CACHE:
+        ts, data = _URL_INFO_CACHE[url]
+        if now - ts < 3600:
+            return data
+        del _URL_INFO_CACHE[url]
+    return None
+
+
+def _set_cached_url_info(url: str, data: dict):
+    # Maintain cache size <= 200 items
+    if len(_URL_INFO_CACHE) > 200:
+        oldest_key = min(_URL_INFO_CACHE.keys(), key=lambda k: _URL_INFO_CACHE[k][0])
+        del _URL_INFO_CACHE[oldest_key]
+    _URL_INFO_CACHE[url] = (time.time(), data)
+
+
 @app.post("/api/info")
 def fetch_url_info(req: UrlInfoRequest) -> dict:
     url = req.url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="Empty URL provided")
 
-    # Normalize YouTube URLs (including playlist mixes like list=RD<video_id>, shorts, youtu.be)
-    if any(domain in url.lower() for domain in ("youtube.com", "youtu.be")):
+    # Fast client-side URL syntax validation
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="Invalid URL protocol. Must start with https:// or http://")
+
+    # Check cache first for 0ms instant response
+    cached = _get_cached_url_info(url)
+    if cached:
+        return cached
+
+    # Fast check for direct video files (.mp4, .webm, .mov, .m4v, .mkv)
+    parsed_path = urllib.parse.urlparse(url).path.lower()
+    if any(parsed_path.endswith(ext) for ext in (".mp4", ".webm", ".mov", ".m4v", ".mkv")):
         try:
-            import urllib.parse
-            parsed = urllib.parse.urlparse(url)
-            qs = urllib.parse.parse_qs(parsed.query)
-            if "v" in qs and qs["v"]:
-                url = f"https://www.youtube.com/watch?v={qs['v'][0]}"
-            elif qs.get("list", [""])[0].startswith("RD") and len(qs.get("list", [""])[0]) > 2:
-                url = f"https://www.youtube.com/watch?v={qs['list'][0][2:]}"
-            elif "youtu.be" in parsed.netloc and parsed.path.strip("/"):
-                url = f"https://www.youtube.com/watch?v={parsed.path.strip('/')}"
-            elif any(parsed.path.startswith(p) for p in ("/shorts/", "/embed/", "/v/")):
-                parts = parsed.path.strip("/").split("/")
-                if len(parts) >= 2:
-                    url = f"https://www.youtube.com/watch?v={parts[1]}"
+            head_req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(head_req, timeout=4) as resp:
+                content_type = resp.headers.get("Content-Type", "")
+                content_len = int(resp.headers.get("Content-Length", 0))
+                filename = Path(parsed_path).name or "Direct Video Stream"
+                size_mb = f"{content_len / (1024 * 1024):.1f} MB" if content_len > 0 else "Direct Media"
+                result = {
+                    "ok": True,
+                    "title": filename,
+                    "uploader": f"Direct Stream ({size_mb})",
+                    "duration": 0,
+                    "thumbnail": "",
+                    "view_count": None,
+                    "webpage_url": url,
+                }
+                _set_cached_url_info(url, result)
+                return result
         except Exception:
             pass
 
-    # Fast-path for YouTube via official public oEmbed (100ms response, zero rate-limit)
-    if any(domain in url.lower() for domain in ("youtube.com", "youtu.be")):
+    # Normalize YouTube URLs (including playlist mixes like list=RD<video_id>, shorts, youtu.be, music.youtube)
+    normalized_yt_url = url
+    if any(domain in url.lower() for domain in ("youtube.com", "youtu.be", "youtube-nocookie.com")):
         try:
-            import urllib.parse
-            import urllib.request
-            import json as pyjson
-            oe_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(url)}&format=json"
+            parsed = urllib.parse.urlparse(url)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "v" in qs and qs["v"]:
+                normalized_yt_url = f"https://www.youtube.com/watch?v={qs['v'][0]}"
+            elif qs.get("list", [""])[0].startswith("RD") and len(qs.get("list", [""])[0]) > 2:
+                normalized_yt_url = f"https://www.youtube.com/watch?v={qs['list'][0][2:]}"
+            elif "youtu.be" in parsed.netloc and parsed.path.strip("/"):
+                normalized_yt_url = f"https://www.youtube.com/watch?v={parsed.path.strip('/')}"
+            elif any(parsed.path.startswith(p) for p in ("/shorts/", "/embed/", "/v/")):
+                parts = parsed.path.strip("/").split("/")
+                if len(parts) >= 2:
+                    normalized_yt_url = f"https://www.youtube.com/watch?v={parts[1]}"
+        except Exception:
+            pass
+
+    # Fast-path for YouTube via official public oEmbed (50-100ms response, zero rate-limit)
+    if any(domain in normalized_yt_url.lower() for domain in ("youtube.com", "youtu.be")):
+        try:
+            oe_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(normalized_yt_url)}&format=json"
             oe_req = urllib.request.Request(oe_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-            with urllib.request.urlopen(oe_req, timeout=5) as resp:
+            with urllib.request.urlopen(oe_req, timeout=4) as resp:
                 oe_data = pyjson.loads(resp.read().decode())
                 thumb = oe_data.get("thumbnail_url") or ""
                 # Try higher resolution thumbnail if hqdefault
                 if "hqdefault.jpg" in thumb:
                     thumb = thumb.replace("hqdefault.jpg", "maxresdefault.jpg")
-                return {
+                result = {
                     "ok": True,
                     "title": oe_data.get("title") or "YouTube Video",
                     "uploader": oe_data.get("author_name") or "YouTube Creator",
                     "duration": 0,
                     "thumbnail": thumb,
                     "view_count": None,
-                    "webpage_url": url,
+                    "webpage_url": normalized_yt_url,
                 }
+                _set_cached_url_info(url, result)
+                if normalized_yt_url != url:
+                    _set_cached_url_info(normalized_yt_url, result)
+                return result
         except Exception:
             pass
 
-    # Fast-path for Vimeo via oEmbed
+    # Fast-path for Vimeo via oEmbed (50-100ms)
     if "vimeo.com" in url.lower():
         try:
-            import urllib.parse
-            import urllib.request
-            import json as pyjson
             voe_url = f"https://vimeo.com/api/oembed.json?url={urllib.parse.quote(url)}"
-            with urllib.request.urlopen(voe_url, timeout=5) as resp:
+            with urllib.request.urlopen(voe_url, timeout=4) as resp:
                 voe_data = pyjson.loads(resp.read().decode())
-                return {
+                result = {
                     "ok": True,
                     "title": voe_data.get("title") or "Vimeo Video",
                     "uploader": voe_data.get("author_name") or "Vimeo Creator",
@@ -164,6 +220,8 @@ def fetch_url_info(req: UrlInfoRequest) -> dict:
                     "view_count": None,
                     "webpage_url": url,
                 }
+                _set_cached_url_info(url, result)
+                return result
         except Exception:
             pass
 
@@ -193,7 +251,7 @@ def fetch_url_info(req: UrlInfoRequest) -> dict:
             if isinstance(data, dict):
                 if data.get("entries"):
                     data = data["entries"][0]
-                return {
+                result = {
                     "ok": True,
                     "title": data.get("title") or "Untitled Video",
                     "uploader": data.get("uploader") or data.get("channel") or "Unknown Channel",
@@ -202,6 +260,8 @@ def fetch_url_info(req: UrlInfoRequest) -> dict:
                     "view_count": data.get("view_count"),
                     "webpage_url": data.get("webpage_url") or url,
                 }
+                _set_cached_url_info(url, result)
+                return result
             raise HTTPException(status_code=400, detail="Could not read video information from this URL")
     except HTTPException:
         raise

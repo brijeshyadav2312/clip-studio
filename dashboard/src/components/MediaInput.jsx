@@ -66,6 +66,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
 
   const fileInputRef = useRef(null);
   const fetchTimerRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   // Periodically check real-time server health
   useEffect(() => {
@@ -92,7 +93,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
     };
   }, []);
 
-  // Fetch video information from URL
+  // Fetch video information from URL with race-condition prevention (AbortController)
   const fetchVideoInfo = async (targetUrl) => {
     const trimmed = (targetUrl || '').trim();
     if (!trimmed || !/^https?:\/\//i.test(trimmed)) {
@@ -100,6 +101,12 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
       setIsFetchingInfo(false);
       return;
     }
+
+    // Cancel any in-flight requests to avoid stale responses
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
 
     setIsFetchingInfo(true);
     setFetchError(null);
@@ -109,6 +116,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: trimmed }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!res.ok) {
@@ -119,6 +127,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
       const data = await res.json();
       setVideoInfo(data);
     } catch (err) {
+      if (err.name === 'AbortError') return; // Ignore aborted requests
       console.warn('Fetch info error:', err);
       setFetchError(err.message || 'Failed to fetch video information');
       setVideoInfo(null);
@@ -632,8 +641,32 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                         {/* Top Badges */}
                         <div className="relative z-10 flex items-center justify-between p-3.5 pointer-events-none">
                           <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-mono text-white/90 border border-white/10 shadow flex items-center gap-1.5">
-                            <Youtube size={12} className="text-red-500 shrink-0" />
-                            <span>Web Video</span>
+                            {/youtube\.com|youtu\.be/i.test(videoInfo.webpage_url || url) ? (
+                              <>
+                                <Youtube size={12} className="text-red-500 shrink-0" />
+                                <span>YouTube</span>
+                              </>
+                            ) : /vimeo\.com/i.test(videoInfo.webpage_url || url) ? (
+                              <>
+                                <Tv size={12} className="text-sky-400 shrink-0" />
+                                <span>Vimeo</span>
+                              </>
+                            ) : /instagram\.com/i.test(videoInfo.webpage_url || url) ? (
+                              <>
+                                <Instagram size={12} className="text-pink-400 shrink-0" />
+                                <span>Instagram</span>
+                              </>
+                            ) : /\.(mp4|webm|mov|m4v)/i.test(videoInfo.webpage_url || url) ? (
+                              <>
+                                <FileVideo size={12} className="text-amber-400 shrink-0" />
+                                <span>Direct Video</span>
+                              </>
+                            ) : (
+                              <>
+                                <Tv size={12} className="text-emerald-400 shrink-0" />
+                                <span>Web Video</span>
+                              </>
+                            )}
                           </span>
 
                           <span className="px-2.5 py-1 rounded-full bg-black/80 backdrop-blur-md text-[11px] font-mono font-bold text-white border border-white/10 shadow flex items-center gap-1">
