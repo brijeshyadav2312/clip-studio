@@ -100,6 +100,7 @@ class Settings:
     # Behaviour
     keep_temp: bool = os.getenv("CLIP_KEEP_TEMP", "0") == "1"
     cookies_from_browser: str = os.getenv("CLIP_COOKIES_FROM_BROWSER", "")
+    cookie_file: str = os.getenv("CLIP_COOKIE_FILE", "")
 
     def ratio(self) -> float:
         try:
@@ -131,6 +132,8 @@ class Settings:
             "subtitle_script": self.subtitle_script,
             "whisper_model": self.whisper_model,
             "llm_provider": self.llm_provider,
+            "cookies_from_browser": self.cookies_from_browser,
+            "cookie_file": self.cookie_file,
         }
 
 

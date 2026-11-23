@@ -7,8 +7,8 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
-from .config import Settings
-from .utils import ToolError, log, video_info
+from .config import DATA_DIR, ROOT, Settings
+from .utils import ToolError, log, strip_ansi, video_info
 
 Progress = Callable[[float, str], None]
 
@@ -62,8 +62,26 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
         "restrictfilenames": True,
         "progress_hooks": [hook],
     }
-    if settings.cookies_from_browser:
-        # e.g. CLIP_COOKIES_FROM_BROWSER=chrome  (fixes "Sign in to confirm you're not a bot")
+
+    # Enable Node.js JS runtime if available for modern YouTube extraction
+    node_exe = shutil.which("node")
+    if node_exe:
+        opts["js_runtimes"] = {"node": {"path": node_exe}}
+
+    # Check for cookies file (explicitly configured, or in data/cookies.txt, or root cookies.txt)
+    cookie_candidate = None
+    if settings.cookie_file and Path(settings.cookie_file).exists():
+        cookie_candidate = Path(settings.cookie_file)
+    elif (DATA_DIR / "cookies.txt").exists():
+        cookie_candidate = DATA_DIR / "cookies.txt"
+    elif (ROOT / "cookies.txt").exists():
+        cookie_candidate = ROOT / "cookies.txt"
+
+    if cookie_candidate:
+        log(f"[ingest] using cookie file: {cookie_candidate}")
+        opts["cookiefile"] = str(cookie_candidate)
+    elif settings.cookies_from_browser and settings.cookies_from_browser.lower() not in {"", "none", "auto"}:
+        # e.g. CLIP_COOKIES_FROM_BROWSER=chrome | edge | firefox | brave
         opts["cookiesfrombrowser"] = (settings.cookies_from_browser,)
 
     log(f"[ingest] downloading {url}")
@@ -81,11 +99,15 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
                     "duration": data.get("duration"),
                 }
     except Exception as exc:
-        raise ToolError(
-            f"Download failed: {exc}\n"
-            "If YouTube asked for a sign-in, set CLIP_COOKIES_FROM_BROWSER=chrome "
-            "(or edge/firefox) in .env and retry, or upload the file instead."
-        ) from exc
+        raw_msg = strip_ansi(str(exc))
+        if "confirm you're not a bot" in raw_msg.lower() or "sign in to confirm" in raw_msg.lower():
+            raise ToolError(
+                "YouTube Bot Protection: YouTube requires bot verification for this URL.\n\n"
+                "To continue:\n"
+                "1. Switch to the 'Upload file' tab above to clip your video file directly without restrictions.\n"
+                "2. Or export your YouTube cookies as 'cookies.txt' and upload them in Customization Options."
+            ) from exc
+        raise ToolError(f"Download failed: {raw_msg}") from exc
 
     if meta:
         (dest_dir / "source.json").write_text(

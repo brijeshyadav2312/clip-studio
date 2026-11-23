@@ -21,7 +21,7 @@ from . import pipeline
 from .config import DATA_DIR, ROOT, Settings, settings_for
 from .llm import provider_available
 from .render import check_tools
-from .utils import ToolError, read_json, video_info, write_json
+from .utils import ToolError, read_json, strip_ansi, video_info, write_json
 
 JOBS_DIR = DATA_DIR / "jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
@@ -55,6 +55,8 @@ class JobRequest(BaseModel):
     caption_position: str | None = None
     subtitle_script: str | None = None
     whisper_model: str | None = None
+    cookies_from_browser: str | None = None
+    cookie_file: str | None = None
     censor: bool = False
     hook: str | None = None
     title: str | None = None
@@ -106,11 +108,12 @@ def _run(job_id: str, settings: Settings, url: str | None, upload: Path | None,
             hook_override=hook, censor=censor,
         )
     except Exception as exc:
+        err_msg = strip_ansi(str(exc))
         with LOCK:
             if job_id in JOB_CACHE:
                 JOB_CACHE[job_id]["status"] = "error"
-                JOB_CACHE[job_id]["error"] = str(exc)
-                JOB_CACHE[job_id]["message"] = str(exc).splitlines()[0][:300]
+                JOB_CACHE[job_id]["error"] = err_msg
+                JOB_CACHE[job_id]["message"] = err_msg.splitlines()[0][:300]
     finally:
         if upload is not None:
             upload.unlink(missing_ok=True)
@@ -323,3 +326,28 @@ def health() -> dict:
         status_code=200 if not problems else 503,
         content={"ok": not problems, "problems": problems, "jobs_dir": str(JOBS_DIR)},
     )
+
+
+@app.post("/api/cookies")
+async def upload_cookies(file: UploadFile = File(...)):
+    dest = DATA_DIR / "cookies.txt"
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return {"ok": True, "size": dest.stat().st_size}
+
+
+@app.get("/api/cookies")
+def get_cookies_status() -> dict:
+    p1 = DATA_DIR / "cookies.txt"
+    p2 = ROOT / "cookies.txt"
+    found = p1.exists() or p2.exists()
+    size = (p1 if p1.exists() else p2).stat().st_size if found else 0
+    return {"has_cookies": found, "size": size}
+
+
+@app.delete("/api/cookies")
+def delete_cookies() -> dict:
+    for p in (DATA_DIR / "cookies.txt", ROOT / "cookies.txt"):
+        if p.exists():
+            p.unlink(missing_ok=True)
+    return {"ok": True}

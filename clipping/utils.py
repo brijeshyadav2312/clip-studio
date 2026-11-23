@@ -16,6 +16,17 @@ class ToolError(RuntimeError):
     pass
 
 
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes and terminal artifacts from text."""
+    if not text:
+        return ""
+    # Strip \x1b[...] or \033[...]
+    clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
+    # Strip double bracket artifacts like [][0;31m
+    clean = re.sub(r"\[\]\[[0-9;]*[a-zA-Z]", "", clean)
+    return clean.strip()
+
+
 def run(cmd: Sequence[str], *, cwd: Path | None = None, timeout: int | None = None) -> subprocess.CompletedProcess:
     """Run a command and raise a readable error on failure."""
     proc = subprocess.run(

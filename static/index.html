@@ -359,6 +359,26 @@
           <div class="field-desc">Guarantees consistent alphabet & eliminates script jumping</div>
         </div>
 
+        <!-- YouTube Cookies / Bot Protection Options -->
+        <div class="field" style="grid-column: span 2;">
+          <label>YouTube Bot Protection / Cookies</label>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <select id="cookies_from_browser" style="flex: 1; min-width: 220px;">
+              <option value="">Auto (Use cookies.txt if present / No auth)</option>
+              <option value="chrome">Chrome (Read from local browser)</option>
+              <option value="edge">Edge (Read from local browser)</option>
+              <option value="firefox">Firefox (Read from local browser)</option>
+              <option value="brave">Brave (Read from local browser)</option>
+            </select>
+            <label class="btn-sm" style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; background: #232838; padding: 11px 16px; border-radius: 10px; margin: 0; white-space: nowrap; border: 1px solid var(--line);">
+              <span>📁 Upload cookies.txt</span>
+              <input id="cookieFileInput" type="file" accept=".txt" style="display:none;" />
+            </label>
+            <span id="cookieBadge" class="pill" style="display:none;"></span>
+          </div>
+          <div class="field-desc">If YouTube enforces bot verification, upload an exported cookies.txt or choose a browser. You can also clip any video with zero issues using the "Upload file" tab above.</div>
+        </div>
+
         <!-- Section 1: Framing & Camera Stabilization -->
         <div class="section-divider">
           Layout & Framing Presets <span>(Auto-switches or choose explicitly)</span>
@@ -580,7 +600,55 @@ async function api(path, opts = {}) {
 
 function showError(message) {
   const el = $("error");
-  el.textContent = message;
+  const cleanMsg = (message || "")
+    .replace(/\[\]\[[0-9;]*[a-zA-Z]/g, "")
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
+    .trim();
+
+  const isBotBlock = cleanMsg.includes("Bot Protection") ||
+                     cleanMsg.includes("Sign in to confirm") ||
+                     cleanMsg.includes("confirm you're not a bot");
+
+  if (isBotBlock) {
+    el.innerHTML = `
+      <div style="font-weight: 700; margin-bottom: 6px; font-size: 14.5px; color: #ff8c94;">
+        ⚠️ YouTube Bot Verification Required
+      </div>
+      <div style="margin-bottom: 12px; line-height: 1.5; font-size: 13px; opacity: 0.95;">
+        YouTube has flagged unauthenticated automated downloads from this IP for this specific video. You can easily proceed using either option below:
+      </div>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
+        <button id="btnSwitchToUpload" type="button" class="btn-sm" style="background: var(--accent); color: white; cursor: pointer; padding: 9px 18px; border-radius: 9px; border: 0; font-weight: 650; box-shadow: 0 4px 12px rgba(124,92,255,0.3);">
+          📁 Switch to "Upload file" Tab (Instant Clip)
+        </button>
+        <button id="btnUploadCookieAction" type="button" class="btn-sm" style="background: #232838; color: var(--text); cursor: pointer; padding: 9px 16px; border-radius: 9px; border: 1px solid var(--line); font-weight: 600;">
+          🍪 Upload cookies.txt
+        </button>
+      </div>
+      <div style="font-size: 11.5px; opacity: 0.8; margin-top: 6px; line-height: 1.4;">
+        💡 <b>Fastest:</b> Download the video or drop any MP4 into the "Upload file" tab to generate vertical shorts with zero YouTube restrictions.
+      </div>
+    `;
+    setTimeout(() => {
+      const btnUpload = $("btnSwitchToUpload");
+      if (btnUpload) {
+        btnUpload.onclick = () => {
+          document.querySelectorAll(".tab").forEach(t => {
+            if (t.textContent.includes("Upload")) t.click();
+          });
+        };
+      }
+      const btnCookie = $("btnUploadCookieAction");
+      if (btnCookie) {
+        btnCookie.onclick = () => {
+          const inp = $("cookieFileInput");
+          if (inp) inp.click();
+        };
+      }
+    }, 50);
+  } else {
+    el.textContent = cleanMsg;
+  }
   el.classList.remove("hidden");
   $("progressWrap").style.display = "block";
 }
@@ -641,6 +709,7 @@ function options() {
     caption_position: $("caption_position").value,
     subtitle_script: $("subtitle_script").value,
     whisper_model: $("whisper_model").value,
+    cookies_from_browser: $("cookies_from_browser") ? $("cookies_from_browser").value : "",
     hook: ($("hook").value || "").trim() || null,
     censor: $("censor").checked,
   };
@@ -969,8 +1038,51 @@ $("drop").addEventListener("drop", (e) => {
       if (config.defaults.layout) $("layout").value = config.defaults.layout;
       if (config.defaults.caption_style) $("style").value = config.defaults.caption_style;
       if (config.defaults.stabilization) $("stabilization").value = config.defaults.stabilization;
+      if (config.defaults.cookies_from_browser && $("cookies_from_browser")) {
+        $("cookies_from_browser").value = config.defaults.cookies_from_browser;
+      }
     }
   } catch (e) { /* server starting */ }
+
+  // Check cookies.txt status
+  async function checkCookieStatus() {
+    try {
+      const data = await api("/api/cookies");
+      const badge = $("cookieBadge");
+      if (badge) {
+        if (data.has_cookies) {
+          badge.style.display = "inline-flex";
+          badge.className = "pill ok";
+          badge.textContent = `✓ cookies.txt active (${(data.size / 1024).toFixed(1)} KB)`;
+        } else {
+          badge.style.display = "none";
+        }
+      }
+    } catch (e) {}
+  }
+  checkCookieStatus();
+
+  const cookieInput = $("cookieFileInput");
+  if (cookieInput) {
+    cookieInput.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const res = await fetch("/api/cookies", { method: "POST", body: fd });
+        if (res.ok) {
+          await checkCookieStatus();
+          clearError();
+          alert("cookies.txt uploaded successfully! YouTube authentication cookies are now active.");
+        } else {
+          alert("Failed to upload cookies file.");
+        }
+      } catch (err) {
+        alert("Upload error: " + err.message);
+      }
+    });
+  }
 })();
 </script>
 </body>
