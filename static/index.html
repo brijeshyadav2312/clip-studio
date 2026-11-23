@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clip Studio — long video to vertical shorts</title>
+<style>
+  :root {
+    --bg: #0a0b10;
+    --panel: #12141c;
+    --panel-2: #171a24;
+    --line: #232838;
+    --text: #e8ebf2;
+    --muted: #8b93a7;
+    --accent: #7c5cff;
+    --accent-2: #21d4a0;
+    --danger: #ff5c72;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(1200px 600px at 15% -10%, #1c1640 0%, transparent 60%),
+                radial-gradient(900px 500px at 95% 0%, #0d2b2a 0%, transparent 55%),
+                var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    max-width: 1180px; margin: 0 auto; padding: 28px 22px 8px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 38px; height: 38px; border-radius: 11px;
+    background: linear-gradient(135deg, var(--accent), #ff7ac8);
+    display: grid; place-items: center; font-weight: 800; font-size: 15px;
+  }
+  h1 { font-size: 19px; margin: 0; letter-spacing: -0.3px; }
+  .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .pill {
+    font-size: 11.5px; padding: 6px 11px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); background: #0f1118;
+    white-space: nowrap;
+  }
+  .pill.ok { color: var(--accent-2); border-color: #1d4a3d; background: #0c1f1b; }
+  .pill.warn { color: #ffca62; border-color: #4a3c17; background: #1f1a0c; }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 14px 22px 80px; }
+  .card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.025), transparent), var(--panel);
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 18px;
+  }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tab {
+    padding: 8px 14px; border-radius: 10px; font-size: 13.5px; cursor: pointer;
+    border: 1px solid transparent; color: var(--muted); background: transparent;
+  }
+  .tab.active { background: var(--panel-2); border-color: var(--line); color: var(--text); }
+
+  .row { display: flex; gap: 10px; }
+  input[type=text], input[type=number], select {
+    width: 100%; background: #0c0e14; color: var(--text);
+    border: 1px solid var(--line); border-radius: 11px; padding: 13px 14px;
+    font-size: 14px; outline: none;
+  }
+  input:focus, select:focus { border-color: #4a3f8f; box-shadow: 0 0 0 3px rgba(124,92,255,0.12); }
+  .btn {
+    border: 0; border-radius: 11px; padding: 13px 22px; font-size: 14px; font-weight: 650;
+    cursor: pointer; background: linear-gradient(135deg, var(--accent), #a06bff); color: white;
+    white-space: nowrap;
+  }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .btn.ghost { background: #14161f; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+
+  details { margin-top: 14px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--muted); user-select: none; }
+  summary:hover { color: var(--text); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+  .field label { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-top: 14px; }
+
+  .drop {
+    margin-top: 12px; border: 1.5px dashed #2b3145; border-radius: 12px; padding: 22px;
+    text-align: center; color: var(--muted); font-size: 13.5px; cursor: pointer;
+  }
+  .drop.over { border-color: var(--accent); color: var(--text); background: rgba(124,92,255,.06); }
+
+  .progress-wrap { margin-top: 16px; display: none; }
+  .bar { height: 8px; border-radius: 999px; background: #0c0e14; overflow: hidden; border: 1px solid var(--line); }
+  .bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .4s ease; }
+  .status { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-top: 8px; gap: 12px; }
+  .error { color: var(--danger); font-size: 13px; margin-top: 12px; white-space: pre-wrap; }
+
+  section { margin-top: 34px; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+  h2 { font-size: 15px; margin: 0; letter-spacing: -0.2px; }
+  .hint { font-size: 12px; color: var(--muted); }
+
+  .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 16px; }
+  .clip {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 13px; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .clip video { width: 100%; aspect-ratio: 9 / 16; background: #05060a; display: block; object-fit: cover; }
+  .clip .meta { padding: 11px 12px 13px; display: flex; flex-direction: column; gap: 8px; }
+  .clip .title { font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .clip .tags { display: flex; gap: 6px; flex-wrap: wrap; font-size: 10.5px; color: var(--muted); }
+  .tag { border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
+  .tag.score { color: var(--accent-2); border-color: #1d4a3d; }
+  .actions { display: flex; gap: 8px; margin-top: 2px; }
+  .actions a {
+    flex: 1; text-align: center; text-decoration: none; font-size: 12px; padding: 8px;
+    border-radius: 9px; border: 1px solid var(--line); color: var(--text); background: #0f1118;
+  }
+  .actions a:hover { border-color: #3b3f57; }
+
+  .jobs { display: flex; flex-direction: column; gap: 8px; }
+  .job {
+    display: flex; align-items: center; gap: 12px; padding: 11px 13px; font-size: 13px;
+    border: 1px solid var(--line); border-radius: 11px; background: var(--panel); cursor: pointer;
+  }
+  .job:hover { border-color: #343a52; }
+  .job .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job .state { font-size: 11.5px; color: var(--muted); }
+  .job .state.done { color: var(--accent-2); }
+  .job .state.error { color: var(--danger); }
+  .job .del { color: var(--muted); font-size: 12px; padding: 2px 6px; border-radius: 6px; }
+  .job .del:hover { color: var(--danger); background: #1a0f13; }
+  .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
+  .hidden { display: none !important; }
+  @media (max-width: 640px) {
+    .row { flex-direction: column; }
+    header { padding-top: 18px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">CS</div>
+    <div>
+      <h1>Clip Studio</h1>
+      <div class="sub">Long video in, vertical captioned shorts out. Everything runs on your machine.</div>
+    </div>
+  </div>
+  <div id="llmPill" class="pill">checking…</div>
+</header>
+
+<main>
+  <div class="card">
+    <div class="tabs">
+      <button class="tab active" data-tab="url">YouTube URL</button>
+      <button class="tab" data-tab="file">Upload file</button>
+    </div>
+
+    <div id="tab-url">
+      <div class="row">
+        <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" />
+        <button id="go" class="btn">Make clips</button>
+      </div>
+    </div>
+
+    <div id="tab-file" class="hidden">
+      <div id="drop" class="drop">Drop a video here, or click to choose (mp4, mov, mkv, webm)</div>
+      <input id="file" type="file" accept="video/*" class="hidden" />
+      <div class="row" style="margin-top:12px">
+        <div id="fileName" class="hint" style="flex:1">No file selected</div>
+        <button id="goFile" class="btn" disabled>Make clips</button>
+      </div>
+    </div>
+
+    <details>
+      <summary>Options</summary>
+      <div class="grid">
+        <div class="field"><label>Clips</label><input id="num" type="number" min="1" max="20" value="5" /></div>
+        <div class="field"><label>Min seconds</label><input id="min" type="number" min="8" max="180" value="20" /></div>
+        <div class="field"><label>Max seconds</label><input id="max" type="number" min="10" max="300" value="60" /></div>
+        <div class="field">
+          <label>Layout</label>
+          <select id="layout">
+            <option value="auto">Auto (crop if faces, else blur)</option>
+            <option value="crop">Crop to speaker</option>
+            <option value="blur">Full frame + blur</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Captions</label>
+          <select id="style">
+            <option value="wordpop">Word pop</option>
+            <option value="karaoke">Karaoke</option>
+            <option value="hormozi">Hormozi</option>
+            <option value="clean">Clean</option>
+          </select>
+        </div>
+        <div class="field"><label>Hook text (optional)</label><input id="hook" type="text" placeholder="AI picks it" /></div>
+      </div>
+      <label class="check"><input id="censor" type="checkbox" /> Mask + mute profanity</label>
+    </details>
+
+    <div id="progressWrap" class="progress-wrap">
+      <div class="bar"><div id="barFill"></div></div>
+      <div class="status"><span id="statusText">Starting…</span><span id="pctText">0%</span></div>
+      <div id="error" class="error hidden"></div>
+    </div>
+  </div>
+
+  <section id="resultsSection" class="hidden">
+    <div class="section-head">
+      <h2 id="resultsTitle">Clips</h2>
+      <div class="hint" id="resultsHint"></div>
+    </div>
+    <div id="clips" class="clips"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Recent jobs</h2>
+      <div class="hint">Stored in <code>data/jobs</code></div>
+    </div>
+    <div id="jobs" class="jobs"><div class="empty">Nothing yet.</div></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let activeJob = null;
+let timer = null;
+let selectedFile = null;
+let config = null;
+
+function fmtDur(sec) {
+  if (!sec) return "—";
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+  return m ? `${m}m ${s}s` : `${s}s`;
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = body.detail || JSON.stringify(body); } catch (e) {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+function showError(message) {
+  const el = $("error");
+  el.textContent = message;
+  el.classList.remove("hidden");
+  $("progressWrap").style.display = "block";
+}
+
+function setProgress(pct, message, status) {
+  $("progressWrap").style.display = "block";
+  $("barFill").style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  $("pctText").textContent = `${Math.round(pct)}%`;
+  $("statusText").textContent = message || status || "";
+}
+
+function options() {
+  return {
+    num_clips: Number($("num").value) || null,
+    min_sec: Number($("min").value) || null,
+    max_sec: Number($("max").value) || null,
+    layout: $("layout").value,
+    caption_style: $("style").value,
+    hook: $("hook").value.trim() || null,
+    censor: $("censor").checked,
+  };
+}
+
+async function startUrl() {
+  const url = $("url").value.trim();
+  if (!url) return showError("Paste a YouTube URL first.");
+  $("go").disabled = true;
+  $("error").classList.add("hidden");
+  setProgress(0, "Queued…");
+  try {
+    const job = await api("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, ...options() }),
+    });
+    watch(job.id);
+  } catch (err) {
+    $("go").disabled = false;
+    showError(err.message);
+  }
+}
+
+async function startFile() {
+  if (!selectedFile) return;
+  $("goFile").disabled = true;
+  $("error").classList.add("hidden");
+  setProgress(0, "Uploading…");
+  const form = new FormData();
+  form.append("file", selectedFile);
+  const opts = options();
+  Object.entries(opts).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) form.append(key, value);
+  });
+  try {
+    const job = await api("/api/jobs/upload", { method: "POST", body: form });
+    watch(job.id);
+  } catch (err) {
+    $("goFile").disabled = false;
+    showError(err.message);
+  }
+}
+
+function watch(jobId) {
+  activeJob = jobId;
+  if (timer) clearInterval(timer);
+  const tick = async () => {
+    let job;
+    try {
+      job = await api(`/api/jobs/${jobId}`);
+    } catch (err) {
+      clearInterval(timer);
+      return showError(err.message);
+    }
+    setProgress(job.progress || 0, job.message, job.status);
+    if (job.status === "done") {
+      clearInterval(timer);
+      timer = null;
+      $("go").disabled = false;
+      $("goFile").disabled = false;
+      renderClips(job);
+      loadJobs();
+    } else if (job.status === "error") {
+      clearInterval(timer);
+      timer = null;
+      $("go").disabled = false;
+      $("goFile").disabled = false;
+      showError(job.error || "Something went wrong.");
+      loadJobs();
+    }
+  };
+  tick();
+  timer = setInterval(tick, 1500);
+}
+
+function renderClips(job) {
+  const clips = job.clips || [];
+  $("resultsSection").classList.remove("hidden");
+  $("resultsTitle").textContent = `${clips.length} clips`;
+  $("resultsHint").textContent = [
+    job.source?.title ? job.source.title.slice(0, 70) : "",
+    job.source?.duration ? fmtDur(job.source.duration) : "",
+    job.language ? `lang: ${job.language}` : "",
+  ].filter(Boolean).join(" · ");
+
+  const base = `/media/${job.id}/`;
+  $("clips").innerHTML = clips.map((clip) => {
+    const thumb = clip.thumb ? base + clip.thumb : "";
+    return `
+      <article class="clip">
+        <video src="${base}${clip.video}" ${thumb ? `poster="${thumb}"` : ""} controls playsinline preload="metadata"></video>
+        <div class="meta">
+          <div class="title">${escapeHtml(clip.title || "Clip")}</div>
+          <div class="tags">
+            <span class="tag score">${clip.score ?? ""}</span>
+            <span class="tag">${Math.round(clip.duration)}s</span>
+            <span class="tag">${escapeHtml(clip.reframe?.mode || "")}</span>
+          </div>
+          <div class="actions">
+            <a href="${base}${clip.video}" download>MP4</a>
+            <a href="${base}${clip.srt}" download>SRT</a>
+          </div>
+        </div>
+      </article>`;
+  }).join("");
+  $("resultsSection").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function loadJobs() {
+  let jobs = [];
+  try { jobs = await api("/api/jobs"); } catch (e) { return; }
+  const el = $("jobs");
+  if (!jobs.length) {
+    el.innerHTML = '<div class="empty">Nothing yet.</div>';
+    return;
+  }
+  el.innerHTML = jobs.map((job) => `
+    <div class="job" data-id="${job.id}">
+      <span class="name">${escapeHtml(job.title || job.id)}</span>
+      <span class="state ${job.status}">${job.status}${job.status === "done" ? ` · ${job.clips} clips` : job.status === "running" ? ` · ${Math.round(job.progress || 0)}%` : ""}</span>
+      <span class="del" data-del="${job.id}" title="Delete">✕</span>
+    </div>`).join("");
+
+  el.querySelectorAll(".job").forEach((row) => {
+    row.addEventListener("click", async (event) => {
+      if (event.target.dataset.del) return;
+      const job = await api(`/api/jobs/${row.dataset.id}`);
+      setProgress(job.progress || 0, job.message, job.status);
+      if (job.status === "done") renderClips(job);
+      else if (job.status !== "error") watch(job.id);
+      else showError(job.error || "Failed");
+    });
+  });
+  el.querySelectorAll("[data-del]").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (!confirm("Delete this job and its files?")) return;
+      await api(`/api/jobs/${btn.dataset.del}`, { method: "DELETE" });
+      loadJobs();
+    });
+  });
+}
+
+function setTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+  $("tab-url").classList.toggle("hidden", name !== "url");
+  $("tab-file").classList.toggle("hidden", name !== "file");
+}
+
+document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => setTab(tab.dataset.tab)));
+$("go").addEventListener("click", startUrl);
+$("url").addEventListener("keydown", (e) => { if (e.key === "Enter") startUrl(); });
+$("goFile").addEventListener("click", startFile);
+
+$("drop").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", (e) => {
+  selectedFile = e.target.files[0] || null;
+  $("fileName").textContent = selectedFile ? `${selectedFile.name} (${(selectedFile.size / 1048576).toFixed(0)} MB)` : "No file selected";
+  $("goFile").disabled = !selectedFile;
+});
+["dragenter", "dragover"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", (e) => {
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  selectedFile = file;
+  $("fileName").textContent = `${file.name} (${(file.size / 1048576).toFixed(0)} MB)`;
+  $("goFile").disabled = false;
+});
+
+(async function init() {
+  loadJobs();
+  try {
+    config = await api("/api/config");
+    const llm = config.llm || {};
+    const pill = $("llmPill");
+    if (config.problems?.length) {
+      pill.textContent = config.problems[0];
+      pill.className = "pill warn";
+    } else if (llm.ready) {
+      pill.textContent = `AI ranking: ${llm.provider}`;
+      pill.className = "pill ok";
+    } else {
+      pill.textContent = "Heuristic ranking (add an API key for better picks)";
+      pill.className = "pill warn";
+    }
+    if (config.defaults) {
+      $("num").value = config.defaults.num_clips;
+      $("min").value = config.defaults.min_sec;
+      $("max").value = config.defaults.max_sec;
+      $("layout").value = config.defaults.layout;
+      $("style").value = config.defaults.caption_style;
+    }
+  } catch (e) { /* server not ready */ }
+})();
+</script>
+</body>
+</html>
