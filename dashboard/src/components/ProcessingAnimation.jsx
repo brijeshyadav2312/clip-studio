@@ -91,11 +91,11 @@ export default function ProcessingAnimation({
               </span>
             </div>
 
-            {/* Cinematic Vertical Reveal Analysis Canvas */}
+            {/* Cinematic Vertical Reveal Analysis Canvas (Clean, no redundant percentage texts, no border line) */}
             <div className="relative aspect-video rounded-xl border border-rule overflow-hidden bg-black flex items-center justify-center shadow-2xl select-none group">
               {thumbSrc || videoSrc ? (
                 <>
-                  {/* BASE LAYER: Dark, dimmed, slightly desaturated preview */}
+                  {/* BASE LAYER: Darkened and deeply blurred */}
                   {previewMode === 'video_autoplay' && videoSrc ? (
                     <video
                       src={videoSrc}
@@ -103,17 +103,17 @@ export default function ProcessingAnimation({
                       loop
                       muted
                       playsInline
-                      className="absolute inset-0 w-full h-full object-cover filter brightness-[0.25] saturate-[0.5] blur-[1px] pointer-events-none"
+                      className="absolute inset-0 w-full h-full object-cover filter brightness-[0.18] saturate-[0.4] blur-[10px] scale-105 pointer-events-none"
                     />
                   ) : (
                     <img
                       src={thumbSrc}
                       alt="Thumbnail dark base"
-                      className="absolute inset-0 w-full h-full object-cover filter brightness-[0.25] saturate-[0.5] blur-[1px] pointer-events-none"
+                      className="absolute inset-0 w-full h-full object-cover filter brightness-[0.18] saturate-[0.4] blur-[10px] scale-105 pointer-events-none"
                     />
                   )}
 
-                  {/* VIBRANT REVEAL LAYER: Exposes vertically as progress increases from 0% to 100% */}
+                  {/* VIBRANT REVEAL LAYER: Smoothly uncovers vertically as progress advances */}
                   <div
                     className="absolute inset-0 pointer-events-none transition-all duration-500 ease-out"
                     style={{
@@ -127,28 +127,19 @@ export default function ProcessingAnimation({
                         loop
                         muted
                         playsInline
-                        className="w-full h-full object-cover filter brightness-[1.05] saturate-[1.15]"
+                        className="w-full h-full object-cover filter brightness-[1.0] saturate-[1.05]"
                       />
                     ) : (
                       <img
                         src={thumbSrc}
                         alt="Thumbnail reveal"
-                        className="w-full h-full object-cover filter brightness-[1.05] saturate-[1.15]"
+                        className="w-full h-full object-cover filter brightness-[1.0] saturate-[1.05]"
                       />
                     )}
-                  </div>
 
-                  {/* Glowing Laser Reveal Edge Line (moves vertically with progress) */}
-                  {!isDone && !isError && progress > 0 && progress < 100 && (
-                    <div
-                      className="absolute left-0 right-0 h-[2.5px] pointer-events-none transition-all duration-500 ease-out z-20"
-                      style={{
-                        top: `${progress}%`,
-                        background: 'linear-gradient(90deg, transparent, #ba6238 20%, #f59e0b 50%, #ba6238 80%, transparent)',
-                        boxShadow: '0 0 14px 3px rgba(186, 98, 56, 0.9), 0 0 28px 6px rgba(245, 158, 11, 0.6)',
-                      }}
-                    />
-                  )}
+                    {/* Subtle soft shadow transition edge (no harsh border) */}
+                    <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
+                  </div>
                 </>
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 text-muted space-y-2">
@@ -157,24 +148,16 @@ export default function ProcessingAnimation({
                 </div>
               )}
 
-              {/* Minimal Top Badges Overlay */}
+              {/* Minimal Clean Top Badges Overlay (NO duplicate percentages) */}
               <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
                 <span className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-[10.5px] font-mono text-white/90 border border-white/10 shadow flex items-center gap-1.5">
                   <span className={`w-1.5 h-1.5 rounded-full ${isDone ? 'bg-emerald-400' : isError ? 'bg-red-400' : 'bg-[#ba6238] animate-ping'}`} />
-                  <span>{isError ? 'Stopped' : isDone ? '100% Analyzed' : `${Math.round(progress)}% Processed`}</span>
+                  <span>{isError ? 'Stopped' : isDone ? 'Analyzed' : 'Live Analysis'}</span>
                 </span>
 
-                <span className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-[10.5px] font-mono font-bold text-amber-400 border border-white/10 shadow truncate max-w-[200px]">
-                  {job?.title ? String(job.title).slice(0, 28) : 'Active Stream'}
+                <span className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-[10.5px] font-mono font-medium text-white/80 border border-white/10 shadow truncate max-w-[220px]">
+                  {job?.title ? String(job.title).slice(0, 30) : 'Active Stream'}
                 </span>
-              </div>
-
-              {/* Bottom Subtle Gradient for Text Contrast */}
-              <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none z-10" />
-
-              <div className="absolute bottom-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none text-[11px] font-mono text-white/90">
-                <span className="truncate max-w-[70%]">{job?.message || 'Processing...'}</span>
-                <span className="text-amber-400 font-bold shrink-0">{progress}%</span>
               </div>
             </div>
 
@@ -184,7 +167,7 @@ export default function ProcessingAnimation({
                 <span className="text-ink font-medium truncate max-w-[80%]">
                   {job?.message || 'Processing video…'}
                 </span>
-                <span className="readout text-[#ba6238] text-xs font-bold font-mono shrink-0">{progress}%</span>
+                <span className="readout text-[#ba6238] text-xs font-bold font-mono shrink-0">{Math.round(progress)}%</span>
               </div>
               <div className="w-full h-1.5 bg-paper3 rounded-full overflow-hidden">
                 <div
