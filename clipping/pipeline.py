@@ -63,7 +63,10 @@ def process(
         manifest["updated"] = int(time.time())
         write_json(manifest_path, manifest)
         if report:
-            report(status, pct, message)
+            try:
+                report(status, pct, message, manifest)
+            except TypeError:
+                report(status, pct, message)
 
     try:
         # 1. Ingest ---------------------------------------------------------
@@ -172,7 +175,10 @@ def process(
         manifest["updated"] = int(time.time())
         write_json(manifest_path, manifest)
         if report:
-            report("done", 100, manifest["message"])
+            try:
+                report("done", 100, manifest["message"], manifest)
+            except TypeError:
+                report("done", 100, manifest["message"])
         return manifest
 
     except Exception as exc:
@@ -183,7 +189,10 @@ def process(
         write_json(manifest_path, manifest)
         log("[job] failed:\n" + traceback.format_exc())
         if report:
-            report("error", manifest.get("progress", 0), manifest["message"])
+            try:
+                report("error", manifest.get("progress", 0), manifest["message"], manifest)
+            except TypeError:
+                report("error", manifest.get("progress", 0), manifest["message"])
         raise
 
 

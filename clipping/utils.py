@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -104,11 +106,43 @@ def srt_time(seconds: float) -> str:
 
 
 def write_json(path: Path, data: Any) -> None:
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    """Atomic write on Windows/POSIX with fallback to avoid file locking collisions."""
+    content = json.dumps(data, indent=2, ensure_ascii=False)
+    tmp = path.with_suffix(f".tmp-{time.time_ns() % 1000000}")
+    try:
+        tmp.write_text(content, encoding="utf-8")
+        for _ in range(5):
+            try:
+                import os
+                os.replace(tmp, path)
+                return
+            except (PermissionError, OSError):
+                time.sleep(0.02)
+        # Fallback if replace is held
+        path.write_text(content, encoding="utf-8")
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
-def read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+def read_json(path: Path, retries: int = 5) -> Any:
+    """Safe read with retries to tolerate concurrent writes on Windows."""
+    last_err: Exception | None = None
+    for attempt in range(retries):
+        try:
+            raw = path.read_text(encoding="utf-8")
+            if not raw.strip():
+                raise ValueError("Empty file read")
+            return json.loads(raw)
+        except (PermissionError, json.JSONDecodeError, ValueError) as exc:
+            last_err = exc
+            time.sleep(0.03 * (attempt + 1))
+    if last_err:
+        raise last_err
+    return {}
 
 
 def log(message: str) -> None:

@@ -32,6 +32,7 @@ app.mount("/media", StaticFiles(directory=str(JOBS_DIR)), name="media")
 
 POOL = ThreadPoolExecutor(max_workers=int(os.getenv("CLIP_WORKERS", "1")), thread_name_prefix="clip")
 LOCK = threading.Lock()
+JOB_CACHE: dict[str, dict] = {}
 
 
 class JobRequest(BaseModel):
@@ -64,22 +65,49 @@ def _job_path(job_id: str) -> Path:
 
 
 def _read_job(job_id: str) -> dict:
+    with LOCK:
+        if job_id in JOB_CACHE:
+            return JOB_CACHE[job_id].copy()
     path = _job_path(job_id) / "job.json"
     if not path.exists():
-        raise HTTPException(status_code=404, detail="Job metadata missing")
-    return read_json(path)
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        data = read_json(path)
+    except Exception as exc:
+        with LOCK:
+            if job_id in JOB_CACHE:
+                return JOB_CACHE[job_id].copy()
+        raise HTTPException(status_code=500, detail=f"Failed to read job state: {exc}")
+    with LOCK:
+        JOB_CACHE[job_id] = data
+    return data
 
 
 def _run(job_id: str, settings: Settings, url: str | None, upload: Path | None,
          hook: str | None, censor: bool, title: str | None) -> None:
     job_dir = JOBS_DIR / job_id
+
+    def on_report(status: str, pct: float, message: str, manifest: dict | None = None) -> None:
+        with LOCK:
+            if manifest:
+                JOB_CACHE[job_id] = manifest.copy()
+            elif job_id in JOB_CACHE:
+                JOB_CACHE[job_id]["status"] = status
+                JOB_CACHE[job_id]["progress"] = pct
+                JOB_CACHE[job_id]["message"] = message
+                JOB_CACHE[job_id]["updated"] = int(time.time())
+
     try:
         pipeline.process(
-            job_dir, settings, url=url, upload=upload,
+            job_dir, settings, report=on_report, url=url, upload=upload,
             hook_override=hook, censor=censor,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        with LOCK:
+            if job_id in JOB_CACHE:
+                JOB_CACHE[job_id]["status"] = "error"
+                JOB_CACHE[job_id]["error"] = str(exc)
+                JOB_CACHE[job_id]["message"] = str(exc).splitlines()[0][:300]
     finally:
         if upload is not None:
             upload.unlink(missing_ok=True)
@@ -89,7 +117,7 @@ def _start(settings: Settings, url: str | None, upload: Path | None,
            hook: str | None, censor: bool, title: str | None) -> str:
     job_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
     job_dir = pipeline.new_job_dir(job_id)
-    write_json(job_dir / "job.json", {
+    manifest = {
         "id": job_id,
         "status": "queued",
         "progress": 0,
@@ -99,7 +127,10 @@ def _start(settings: Settings, url: str | None, upload: Path | None,
         "title": title,
         "options": settings.as_dict() | {"censor": censor},
         "clips": [],
-    })
+    }
+    with LOCK:
+        JOB_CACHE[job_id] = manifest.copy()
+    write_json(job_dir / "job.json", manifest)
     POOL.submit(_run, job_id, settings, url, upload, hook, censor, title)
     return job_id
 
@@ -126,16 +157,30 @@ def config() -> dict:
 @app.get("/api/jobs")
 def list_jobs() -> list[dict]:
     jobs: list[dict] = []
-    for path in sorted(JOBS_DIR.glob("*/job.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:40]:
-        try:
-            data = read_json(path)
-        except Exception:
+    # Collect jobs from disk and cache
+    all_job_dirs = {p.parent.name: p for p in JOBS_DIR.glob("*/job.json")}
+    with LOCK:
+        for jid in list(JOB_CACHE.keys()):
+            if jid not in all_job_dirs:
+                all_job_dirs[jid] = JOBS_DIR / jid / "job.json"
+
+    for job_id, path in sorted(all_job_dirs.items(), key=lambda item: item[1].stat().st_mtime if item[1].exists() else time.time(), reverse=True)[:50]:
+        data = None
+        with LOCK:
+            if job_id in JOB_CACHE:
+                data = JOB_CACHE[job_id]
+        if data is None and path.exists():
+            try:
+                data = read_json(path)
+            except Exception:
+                continue
+        if not data:
             continue
         jobs.append({
-            "id": data.get("id"),
-            "status": data.get("status"),
+            "id": data.get("id", job_id),
+            "status": data.get("status", "unknown"),
             "progress": data.get("progress", 0),
-            "message": data.get("message"),
+            "message": data.get("message", ""),
             "title": data.get("title") or (data.get("source") or {}).get("title"),
             "created": data.get("created"),
             "clips": len(data.get("clips") or []),
@@ -154,6 +199,7 @@ def delete_all_jobs() -> dict:
     """Delete all jobs and their output files."""
     deleted = []
     with LOCK:
+        JOB_CACHE.clear()
         for path in JOBS_DIR.iterdir():
             if path.is_dir():
                 try:
@@ -168,6 +214,7 @@ def delete_all_jobs() -> dict:
 def delete_job(job_id: str) -> dict:
     path = _job_path(job_id)
     with LOCK:
+        JOB_CACHE.pop(job_id, None)
         pipeline.delete_job(path)
     return {"deleted": job_id}
 

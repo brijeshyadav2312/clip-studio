@@ -148,7 +148,32 @@
   .drop:hover { border-color: var(--accent); color: var(--text); }
   .drop.over { border-color: var(--accent); color: var(--text); background: rgba(124,92,255,.08); }
 
-  .progress-wrap { margin-top: 16px; display: none; }
+  .progress-wrap { margin-top: 18px; display: none; }
+  .steps-row {
+    display: flex; justify-content: space-between; gap: 8px; margin-bottom: 12px;
+  }
+  .step {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 7px 8px; border-radius: 8px; font-size: 11.5px; font-weight: 600;
+    background: #0c0e14; border: 1px solid var(--line); color: var(--muted);
+    transition: all 0.25s ease;
+  }
+  .step-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
+    display: inline-block;
+  }
+  .step.active {
+    color: var(--accent); border-color: rgba(124, 92, 255, 0.45); background: rgba(124, 92, 255, 0.1);
+  }
+  .step.active .step-dot {
+    background: var(--accent); box-shadow: 0 0 8px var(--accent);
+  }
+  .step.done {
+    color: var(--accent-2); border-color: rgba(33, 212, 160, 0.35); background: rgba(33, 212, 160, 0.08);
+  }
+  .step.done .step-dot {
+    background: var(--accent-2);
+  }
   .bar { height: 8px; border-radius: 999px; background: #0c0e14; overflow: hidden; border: 1px solid var(--line); }
   .bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .4s ease; }
   .status { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-top: 8px; gap: 12px; }
@@ -454,6 +479,12 @@
 
     <!-- Progress & Status -->
     <div id="progressWrap" class="progress-wrap">
+      <div id="pipelineSteps" class="steps-row">
+        <div class="step" data-step="downloading"><span class="step-dot"></span> Download</div>
+        <div class="step" data-step="transcribing"><span class="step-dot"></span> Transcribe</div>
+        <div class="step" data-step="ranking"><span class="step-dot"></span> AI Highlights</div>
+        <div class="step" data-step="rendering"><span class="step-dot"></span> Render Shorts</div>
+      </div>
       <div class="bar"><div id="barFill"></div></div>
       <div class="status"><span id="statusText">Starting…</span><span id="pctText">0%</span></div>
       <div id="error" class="error hidden"></div>
@@ -533,6 +564,21 @@ function setProgress(pct, message, status) {
   $("barFill").style.width = `${Math.max(0, Math.min(100, pct))}%`;
   $("pctText").textContent = `${Math.round(pct)}%`;
   $("statusText").textContent = message || status || "";
+
+  // Update pipeline visual step breadcrumb
+  const steps = ["downloading", "transcribing", "ranking", "rendering"];
+  const currentIdx = steps.indexOf(status);
+  document.querySelectorAll(".step").forEach((el) => {
+    const s = el.dataset.step;
+    const idx = steps.indexOf(s);
+    if (status === "done" || (currentIdx > -1 && idx < currentIdx)) {
+      el.className = "step done";
+    } else if (idx === currentIdx) {
+      el.className = "step active";
+    } else {
+      el.className = "step";
+    }
+  });
 }
 
 function updateButtons() {
@@ -574,7 +620,7 @@ async function startUrl() {
   clearError();
   activeJob = "starting";
   updateButtons();
-  setProgress(0, "Submitting job…");
+  setProgress(0, "Connecting and submitting job…", "downloading");
 
   try {
     const job = await api("/api/jobs", {
@@ -582,9 +628,12 @@ async function startUrl() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, ...options() }),
     });
+    localStorage.setItem("clip_active_job", job.id);
+    loadJobs();
     watch(job.id);
   } catch (err) {
     activeJob = null;
+    localStorage.removeItem("clip_active_job");
     updateButtons();
     showError(err.message);
   }
@@ -598,7 +647,7 @@ async function startFile() {
   clearError();
   activeJob = "starting";
   updateButtons();
-  setProgress(0, "Uploading video…");
+  setProgress(0, "Uploading video…", "downloading");
 
   const form = new FormData();
   form.append("file", selectedFile);
@@ -609,9 +658,12 @@ async function startFile() {
 
   try {
     const job = await api("/api/jobs/upload", { method: "POST", body: form });
+    localStorage.setItem("clip_active_job", job.id);
+    loadJobs();
     watch(job.id);
   } catch (err) {
     activeJob = null;
+    localStorage.removeItem("clip_active_job");
     updateButtons();
     showError(err.message);
   }
@@ -619,26 +671,51 @@ async function startFile() {
 
 function watch(jobId) {
   activeJob = jobId;
+  localStorage.setItem("clip_active_job", jobId);
   updateButtons();
   if (timer) clearInterval(timer);
 
+  let consecutiveErrors = 0;
+  let ticks = 0;
+  let lastKnownJob = null;
+
   const tick = async () => {
+    ticks++;
     let job;
     try {
       job = await api(`/api/jobs/${jobId}`);
+      lastKnownJob = job;
+      consecutiveErrors = 0;
+      clearError();
     } catch (err) {
+      consecutiveErrors++;
+      console.warn(`[watch] transient error (${consecutiveErrors}/8):`, err);
+      // Auto-retry up to 8 times without crashing UI or stopping the watch loop!
+      if (consecutiveErrors < 8) {
+        const lastMsg = lastKnownJob?.message || "Processing in background…";
+        $("statusText").textContent = `${lastMsg} (syncing...)`;
+        return;
+      }
       clearInterval(timer);
+      timer = null;
       activeJob = null;
+      localStorage.removeItem("clip_active_job");
       updateButtons();
-      return showError(err.message);
+      return showError("Connection interrupted: " + err.message);
     }
 
     setProgress(job.progress || 0, job.message, job.status);
+
+    // Periodically sync recent jobs badge/list
+    if (ticks % 4 === 0) {
+      loadJobs();
+    }
 
     if (job.status === "done") {
       clearInterval(timer);
       timer = null;
       activeJob = null;
+      localStorage.removeItem("clip_active_job");
       updateButtons();
       renderClips(job);
       loadJobs();
@@ -646,8 +723,9 @@ function watch(jobId) {
       clearInterval(timer);
       timer = null;
       activeJob = null;
+      localStorage.removeItem("clip_active_job");
       updateButtons();
-      showError(job.error || "Processing failed.");
+      showError(job.error || job.message || "Processing failed.");
       loadJobs();
     }
   };
@@ -812,6 +890,28 @@ $("drop").addEventListener("drop", (e) => {
 (async function init() {
   updateButtons();
   loadJobs();
+
+  // Auto-resume active job if user refreshed or reopened the page
+  const savedJobId = localStorage.getItem("clip_active_job");
+  if (savedJobId) {
+    try {
+      const job = await api(`/api/jobs/${savedJobId}`);
+      if (job.status === "done") {
+        renderClips(job);
+        localStorage.removeItem("clip_active_job");
+      } else if (job.status === "error") {
+        showError(job.error || "Previous job failed.");
+        localStorage.removeItem("clip_active_job");
+      } else {
+        // Job is still actively processing in background! Resume tracking it
+        setProgress(job.progress || 0, job.message, job.status);
+        watch(savedJobId);
+      }
+    } catch (e) {
+      localStorage.removeItem("clip_active_job");
+    }
+  }
+
   try {
     config = await api("/api/config");
     const llm = config.llm || {};
