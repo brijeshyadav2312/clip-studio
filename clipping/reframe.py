@@ -414,6 +414,30 @@ def _compute_streamer_crops(
     }
 
 
+def detect_wide_content(small_frame) -> bool:
+    """Detect if on-screen text, title cards, slides, or graphics extend into the 9:16 margins."""
+    import cv2
+    import numpy as np
+
+    h, w = small_frame.shape[:2]
+    gray = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY) if len(small_frame.shape) == 3 else small_frame
+    crop_w = int(h * (9.0 / 16.0))
+    margin_w = max(10, (w - crop_w) // 2)
+
+    # Canny edges tuned for typography strokes and graphic line borders
+    edges = cv2.Canny(gray, 50, 150)
+
+    left_margin = edges[:, :margin_w]
+    right_margin = edges[:, w - margin_w:]
+    margin_area = float(h * margin_w)
+
+    left_density = np.count_nonzero(left_margin) / margin_area
+    right_density = np.count_nonzero(right_margin) / margin_area
+
+    # If edge density in outer margins exceeds threshold, text/graphics span wide
+    return bool(left_density > 0.0035 or right_density > 0.0035)
+
+
 def plan(
     video: Path,
     clip_start: float,
@@ -448,24 +472,25 @@ def plan(
             "reason": "Locked central gameplay focus (vehicle / character)",
         }
 
-    # Explicit Gameplay Blur Mode (16:9 gameplay with blurred top/bottom)
-    if settings.layout in ("gameplay_blur", "blur"):
+    # Explicit Smart Fit / Blur Mode (100% on-screen text, slides, and graphics preserved)
+    if settings.layout in ("fit_blur", "smart_fit", "gameplay_blur", "blur"):
         return {
-            "mode": "gameplay_blur",
+            "mode": "fit_blur",
             "crop_w": src_w,
             "crop_h": src_h,
             "scaled_w": sw,
             "samples": [],
             "face_ratio": 0.0,
-            "reason": "Full frame with blurred backdrop",
+            "reason": "Preserved full frame with ambient blur (text & graphics safe)",
         }
 
-    # Sample video frames for face detection
+    # Sample video frames for face and wide content detection
     raw: list[tuple[float, float | None]] = []
     all_detections: list[list[tuple[int, int, int, int, float]]] = []
     crop_w_src = src_h * ratio
     tracker = SpeakerTracker(dwell_sec=settings.podcast_dwell_sec, sample_fps=SAMPLE_FPS)
     hits = 0
+    wide_hits = 0
     frames = 0
 
     try:
@@ -505,6 +530,9 @@ def plan(
                 small = frame
                 factor = 1.0
 
+            if detect_wide_content(small):
+                wide_hits += 1
+
             faces = [
                 (int(fx * factor), int(fy * factor), int(fw * factor), int(fh * factor), score)
                 for (fx, fy, fw, fh, score) in detector.detect(small)
@@ -523,19 +551,20 @@ def plan(
                 break
         cap.release()
     except Exception as exc:
-        log(f"[reframe] analysis failed ({exc}); using centred crop")
+        log(f"[reframe] analysis failed ({exc}); using safe fit_blur")
         return {
-            "mode": "gameplay_center",
-            "crop_w": crop_w,
-            "crop_h": crop_h,
+            "mode": "fit_blur",
+            "crop_w": src_w,
+            "crop_h": src_h,
             "scaled_w": sw,
-            "src_crop": (int(round((src_w - crop_w_src) / 2.0)), 0, int(round(crop_w_src)), src_h),
             "samples": [],
             "face_ratio": 0.0,
-            "reason": f"analysis error: {exc}",
+            "wide_ratio": 0.0,
+            "reason": f"analysis fallback: {exc}",
         }
 
     face_ratio = hits / frames if frames else 0.0
+    wide_ratio = wide_hits / frames if frames else 0.0
     corner_cam = _detect_corner_webcam(all_detections, src_w, src_h)
 
     # Determine layout mode
@@ -552,6 +581,7 @@ def plan(
             "scaled_w": sw,
             "streamer": streamer_crops,
             "face_ratio": round(face_ratio, 3),
+            "wide_ratio": round(wide_ratio, 3),
             "reason": f"corner facecam detected in {streamer_crops['corner']}",
         }
 
@@ -564,11 +594,32 @@ def plan(
             "scaled_w": sw,
             "streamer": streamer_crops,
             "face_ratio": round(face_ratio, 3),
+            "wide_ratio": round(wide_ratio, 3),
             "reason": "streamer picture-in-picture mode",
         }
 
-    # If no faces found (pure gameplay like GTA with no webcam), lock to central gameplay!
-    if face_ratio < 0.20:
+    # Content-Aware Slide / Text / Graphic Detection:
+    # If wide on-screen text, title slides, presentation graphics, or diagrams are present,
+    # or if there is no dominant face, a 9:16 vertical crop cuts off words and diagrams!
+    # Automatically switch to fit_blur so 100% of the graphic/text is visible!
+    if settings.layout == "auto" and (wide_ratio >= 0.10 or face_ratio < 0.25):
+        log(
+            f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s wide text/slide detected "
+            f"(wide: {wide_ratio*100:.0f}%, faces: {face_ratio*100:.0f}%) -> fit_blur"
+        )
+        return {
+            "mode": "fit_blur",
+            "crop_w": src_w,
+            "crop_h": src_h,
+            "scaled_w": sw,
+            "samples": [],
+            "face_ratio": round(face_ratio, 3),
+            "wide_ratio": round(wide_ratio, 3),
+            "reason": f"On-screen text / slide / graphic detected (wide: {int(wide_ratio*100)}%) - preserved in full frame",
+        }
+
+    # If user explicitly configured gameplay center
+    if face_ratio < 0.20 and settings.streamer_game_focus in ("center", "center_low"):
         crop_w_src = src_h * ratio
         gx = max(0.0, (src_w - crop_w_src) / 2.0)
         return {
@@ -579,7 +630,8 @@ def plan(
             "src_crop": (int(round(gx)), 0, int(round(crop_w_src)), src_h),
             "samples": [],
             "face_ratio": round(face_ratio, 3),
-            "reason": "no face found, locked to central gameplay action",
+            "wide_ratio": round(wide_ratio, 3),
+            "reason": "No face found, locked to central gameplay action",
         }
 
     # Standard / Podcast Speaker Mode with Rock-Solid Stabilization
@@ -602,6 +654,7 @@ def plan(
         "samples": samples,
         "target": [(round(t, 3), round(x, 1)) for t, x in raw if x is not None],
         "face_ratio": round(face_ratio, 3),
+        "wide_ratio": round(wide_ratio, 3),
         "reason": f"stabilized crop ({settings.stabilization})",
     }
 

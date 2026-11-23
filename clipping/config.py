@@ -48,7 +48,7 @@ class Settings:
     font: str = os.getenv("CLIP_FONT", "Arial Black")
     hook_sec: float = _float("CLIP_HOOK_SEC", 3.5)
     # Layout & reframing
-    # auto | crop | blur | streamer_split | streamer_pip | gameplay_center | gameplay_blur
+    # auto | fit_blur | crop | blur | streamer_split | streamer_pip | gameplay_center | gameplay_blur
     layout: str = os.getenv("CLIP_LAYOUT", "auto")
     # Camera motion / stabilization: locked_tripod | smooth_cinematic | dynamic
     stabilization: str = os.getenv("CLIP_STABILIZATION", "locked_tripod")

@@ -337,15 +337,16 @@
         <div class="field" style="grid-column: span 2;">
           <label>Layout Mode</label>
           <select id="layout">
-            <option value="auto">Auto (Smart detect: Streamer / Podcast / Gameplay)</option>
+            <option value="auto">Auto (Smart Content-Aware: Text/Slide Safe + Face Track)</option>
+            <option value="fit_blur">Smart Fit + Ambient Blur (100% Text, Slides & Graphics Preserved)</option>
+            <option value="crop">Podcast Speaker Crop (Face-Tracked Vertical)</option>
             <option value="streamer_split">Streamer Split (Webcam Top + Gameplay Bottom) [Shorts standard]</option>
             <option value="gameplay_center">Gameplay Center Action (Locks onto Vehicle / Crosshair / GTA 6)</option>
             <option value="gameplay_blur">Gameplay Full Frame + Blurred Backdrop</option>
             <option value="streamer_pip">Streamer Picture-in-Picture (Floating Facecam)</option>
-            <option value="crop">Podcast Speaker Crop (Face-Tracked Vertical)</option>
             <option value="blur">Full Video + Blurred Mirror</option>
           </select>
-          <div class="field-desc">Choose split-screen for gamer streams, center for vehicle/action, or crop for podcasts</div>
+          <div class="field-desc">Auto detects on-screen text, slides, and graphics so words and diagrams are NEVER cut off</div>
         </div>
 
         <div class="field" style="grid-column: span 2;">
