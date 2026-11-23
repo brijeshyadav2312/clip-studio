@@ -109,5 +109,7 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
 def import_file(src: Path, dest_dir: Path) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     target = dest_dir / f"source{src.suffix.lower() or '.mp4'}"
+    if src.resolve() == target.resolve():
+        return target
     shutil.copyfile(src, target)
     return target

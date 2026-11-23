@@ -53,10 +53,12 @@ def render_clip(
 
     if plan["mode"] == "crop" and sendcmd_path is not None:
         sw = plan.get("scaled_w") or 1080
+        # Seed the crop with the first path position so frame 0 never flashes at x=0.
+        x0 = int(plan.get("samples")[0][1]) if plan.get("samples") else 0
         video = (
             f"[0:v]scale={sw}:1920:flags=lanczos,"
             f"sendcmd=f={_filter_path(sendcmd_path, work_dir)},"
-            f"crop={plan['crop_w']}:{plan['crop_h']}:0:0,"
+            f"crop={plan['crop_w']}:{plan['crop_h']}:{x0}:0,"
             f"subtitles={ass},fps={fps},format=yuv420p[v]"
         )
     else:
