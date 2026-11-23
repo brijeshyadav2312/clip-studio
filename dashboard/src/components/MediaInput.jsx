@@ -613,7 +613,12 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                           <img
                             src={videoInfo.thumbnail}
                             alt={videoInfo.title}
-                            className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
+                            onError={(e) => {
+                              if (e.target.src.includes('maxresdefault.jpg')) {
+                                e.target.src = e.target.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+                              }
+                            }}
+                            className="absolute inset-0 w-full h-full object-cover object-center"
                           />
                         ) : (
                           <div className="absolute inset-0 w-full h-full bg-paper3 flex items-center justify-center text-muted">

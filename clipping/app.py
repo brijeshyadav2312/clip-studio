@@ -101,6 +101,25 @@ def fetch_url_info(req: UrlInfoRequest) -> dict:
     if not url:
         raise HTTPException(status_code=400, detail="Empty URL provided")
 
+    # Normalize YouTube URLs (including playlist mixes like list=RD<video_id>, shorts, youtu.be)
+    if any(domain in url.lower() for domain in ("youtube.com", "youtu.be")):
+        try:
+            import urllib.parse
+            parsed = urllib.parse.urlparse(url)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "v" in qs and qs["v"]:
+                url = f"https://www.youtube.com/watch?v={qs['v'][0]}"
+            elif qs.get("list", [""])[0].startswith("RD") and len(qs.get("list", [""])[0]) > 2:
+                url = f"https://www.youtube.com/watch?v={qs['list'][0][2:]}"
+            elif "youtu.be" in parsed.netloc and parsed.path.strip("/"):
+                url = f"https://www.youtube.com/watch?v={parsed.path.strip('/')}"
+            elif any(parsed.path.startswith(p) for p in ("/shorts/", "/embed/", "/v/")):
+                parts = parsed.path.strip("/").split("/")
+                if len(parts) >= 2:
+                    url = f"https://www.youtube.com/watch?v={parts[1]}"
+        except Exception:
+            pass
+
     # Fast-path for YouTube via official public oEmbed (100ms response, zero rate-limit)
     if any(domain in url.lower() for domain in ("youtube.com", "youtu.be")):
         try:
@@ -154,6 +173,7 @@ def fetch_url_info(req: UrlInfoRequest) -> dict:
         "noplaylist": True,
         "socket_timeout": 8,
         "extract_flat": False,
+        "extractor_args": {"youtube": {"player_client": ["android", "ios", "mweb"]}},
     }
     node_exe = shutil.which("node")
     if node_exe:

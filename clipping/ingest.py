@@ -43,6 +43,25 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
         elif data.get("status") == "finished":
             progress(99.0, "Download finished, merging streams")
 
+    # Normalize YouTube URLs (including playlist mixes like list=RD<video_id>, shorts, youtu.be)
+    if any(domain in url.lower() for domain in ("youtube.com", "youtu.be")):
+        try:
+            import urllib.parse
+            parsed = urllib.parse.urlparse(url.strip())
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "v" in qs and qs["v"]:
+                url = f"https://www.youtube.com/watch?v={qs['v'][0]}"
+            elif qs.get("list", [""])[0].startswith("RD") and len(qs.get("list", [""])[0]) > 2:
+                url = f"https://www.youtube.com/watch?v={qs['list'][0][2:]}"
+            elif "youtu.be" in parsed.netloc and parsed.path.strip("/"):
+                url = f"https://www.youtube.com/watch?v={parsed.path.strip('/')}"
+            elif any(parsed.path.startswith(p) for p in ("/shorts/", "/embed/", "/v/")):
+                parts = parsed.path.strip("/").split("/")
+                if len(parts) >= 2:
+                    url = f"https://www.youtube.com/watch?v={parts[1]}"
+        except Exception:
+            pass
+
     opts: dict = {
         "format": "bv*+ba/b/best",
         "format_sort": ["res:1080", "ext:mp4:m4a"],
@@ -58,6 +77,7 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
         "socket_timeout": 30,
         "restrictfilenames": True,
         "progress_hooks": [hook],
+        "extractor_args": {"youtube": {"player_client": ["android", "ios", "mweb"]}},
     }
 
     # Enable Node.js JS runtime and challenge solver for modern YouTube extraction
