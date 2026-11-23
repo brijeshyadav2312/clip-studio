@@ -7,7 +7,7 @@ import AIConnectView from './components/AIConnectView';
 import SettingsView from './components/SettingsView';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotFoundView from './components/NotFoundView';
-import { AlertCircle, Film, Sparkles, Cookie, Activity, X } from 'lucide-react';
+import { AlertCircle, Film, Sparkles, Cookie, Activity, X, Github, Star } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('generator'); // 'generator' | 'history' | 'aiconnect' | 'settings'
@@ -278,6 +278,9 @@ export default function App() {
 
   const validTabs = ['generator', 'history', 'aiconnect', 'settings'];
 
+  // Check if current view is the static generator form (to eliminate scrollbars)
+  const isSinglePageGenerator = activeTab === 'generator' && !isProcessing && !activeJob;
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#0a0c10] text-ink font-sans">
       {/* If sidebarPosition is 'left' (DEFAULT), render sidebar on the left */}
@@ -297,44 +300,62 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
-        {/* Top Status Header Bar (Height h-16 = 64px, pixel-aligned with Sidebar header) */}
-        <header className="h-16 px-5 sm:px-7 border-b border-rule bg-paper/90 backdrop-blur-md flex items-center justify-between shrink-0 z-20">
+        {/* Top Status Header Bar (h-16 = 64px, pixel-aligned) */}
+        <header className="h-16 px-4 sm:px-6 border-b border-rule bg-paper/90 backdrop-blur-md flex items-center justify-between shrink-0 z-20">
+          {/* Left: Page Title only (openshorts removed) */}
           <div className="flex items-center gap-3 min-w-0">
-            <h2 className="font-bold text-ink text-base sm:text-lg tracking-tight truncate max-w-[220px] sm:max-w-md">
+            <h2 className="font-bold text-ink text-base sm:text-lg tracking-tight truncate max-w-[240px] sm:max-w-md">
               {getPageTitle()}
             </h2>
-            <span className="text-[10px] font-mono font-bold bg-[#ba6238]/15 text-[#ba6238] px-2 py-0.5 rounded border border-[#ba6238]/30 shrink-0">
-              OPENSHORTS
-            </span>
           </div>
 
-          <div className="flex items-center gap-3 text-xs shrink-0">
+          {/* Right: Cookies Badge, AI Icon Button (NO text), and Rate on GitHub */}
+          <div className="flex items-center gap-2.5 sm:gap-3 text-xs shrink-0">
             {cookieStatus?.has_cookies && (
-              <span className="pill pill-ok text-xs font-mono hidden sm:inline-flex items-center gap-1.5 font-semibold">
+              <span className="pill pill-ok text-xs font-mono hidden md:inline-flex items-center gap-1.5 font-semibold">
                 <Cookie size={13} /> Cookies Active
               </span>
             )}
-            <span
+
+            {/* AI Connect Icon Button (Icon only, no text as requested) */}
+            <button
+              type="button"
               onClick={() => setActiveTab('aiconnect')}
-              className="pill pill-muted hover:border-[#ba6238]/60 text-xs font-mono cursor-pointer flex items-center gap-1.5 transition-colors font-semibold"
-              title="Click to configure AI engine"
+              className="p-2 rounded-xl bg-paper2 hover:bg-paper3 border border-rule hover:border-[#ba6238]/60 text-muted hover:text-ink transition-colors cursor-pointer shrink-0"
+              title={config?.llm?.ready ? `AI Active: ${config.llm.provider}` : 'AI Connect Settings'}
             >
-              <Sparkles size={13} className="text-[#ba6238]" />
-              <span className="truncate max-w-[120px]">
-                {config?.llm?.ready ? `AI: ${config.llm.provider}` : 'Local AI'}
-              </span>
-            </span>
+              <Sparkles size={16} className="text-[#ba6238]" />
+            </button>
+
+            {/* Rate on GitHub (Rightmost side as requested) */}
+            <a
+              href="https://github.com/brijeshyadav2312/clip-studio"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rule hover:border-[#ba6238]/60 bg-paper2 hover:bg-paper3 text-ink text-xs font-medium transition-colors cursor-pointer shrink-0"
+              title="Star / Rate Clip Studio on GitHub"
+            >
+              <Github size={14} className="shrink-0 text-muted" />
+              <span className="hidden sm:inline">Rate on GitHub</span>
+              <Star size={13} className="text-amber-400 fill-amber-400 shrink-0" />
+            </a>
           </div>
         </header>
 
-        {/* Scrollable View Area wrapped in ErrorBoundary */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-8 custom-scrollbar">
+        {/* View Area (Zero scrollbar for single-page generator) */}
+        <div
+          className={`flex-1 ${
+            isSinglePageGenerator
+              ? 'overflow-hidden flex flex-col justify-center p-2 sm:p-4'
+              : 'overflow-y-auto p-4 sm:p-7 custom-scrollbar'
+          }`}
+        >
           {/* Error Banner */}
           {error && (
-            <div className="max-w-3xl mx-auto mb-6 p-4 rounded-xl bg-err/10 border border-err/30 text-err text-xs sm:text-sm flex items-start justify-between gap-3 animate-fade">
-              <div className="flex items-start gap-3 min-w-0">
-                <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                <div className="space-y-1 min-w-0">
+            <div className="max-w-3xl mx-auto mb-4 p-3.5 rounded-xl bg-err/10 border border-err/30 text-err text-xs sm:text-sm flex items-start justify-between gap-3 animate-fade">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <AlertCircle size={17} className="shrink-0 mt-0.5" />
+                <div className="space-y-0.5 min-w-0">
                   <span className="font-bold block truncate">Processing Issue</span>
                   <p className="leading-relaxed opacity-90 break-words">{error}</p>
                 </div>
@@ -344,7 +365,7 @@ export default function App() {
                 onClick={() => setError(null)}
                 className="text-err/70 hover:text-err p-1 rounded hover:bg-err/20 transition-colors shrink-0 cursor-pointer"
               >
-                <X size={16} />
+                <X size={15} />
               </button>
             </div>
           )}
@@ -352,7 +373,7 @@ export default function App() {
           <ErrorBoundary onReset={fetchData} onNavigateHome={() => setActiveTab('generator')}>
             {/* Tab 1: Clip Generator (Initial Input or Active Workbench) */}
             {activeTab === 'generator' && (
-              <div>
+              <div className={isSinglePageGenerator ? 'h-full flex items-center justify-center' : ''}>
                 {isProcessing || activeJob ? (
                   <ProcessingAnimation
                     job={activeJob}

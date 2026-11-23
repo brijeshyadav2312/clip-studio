@@ -28,7 +28,6 @@ export default function Sidebar({
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  // Dynamic collapse arrow based on sidebar position
   const CollapseIcon =
     sidebarPosition === 'left'
       ? collapsed
@@ -44,11 +43,10 @@ export default function Sidebar({
         sidebarPosition === 'right' ? 'border-l' : 'border-r'
       } ${collapsed ? 'w-[72px]' : 'w-[250px]'}`}
     >
-      {/* Top Brand Header (Fixed height h-16 = 64px perfectly aligned with main header) */}
+      {/* Top Brand Header (Aligned h-16 = 64px) */}
       <div>
         <div className="h-16 border-b border-rule flex items-center px-3.5">
           {collapsed ? (
-            /* Collapsed Mode: Clean centered expand button, no logo overflow glitch */
             <div className="w-full flex items-center justify-center">
               <button
                 type="button"
@@ -60,22 +58,16 @@ export default function Sidebar({
               </button>
             </div>
           ) : (
-            /* Expanded Mode: Full brand title and collapse button with proper alignment */
             <div className="w-full flex items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#ba6238] via-amber-600 to-[#8d421e] flex items-center justify-center text-white shrink-0 font-bold">
                   <Film size={18} />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-ink text-sm tracking-tight truncate block max-w-[110px]">
-                      Clip Studio
-                    </span>
-                    <span className="text-[9px] font-mono font-bold bg-[#ba6238]/20 text-[#ba6238] px-1.5 py-0.2 rounded border border-[#ba6238]/30 shrink-0">
-                      PRO
-                    </span>
-                  </div>
-                  <span className="text-[9.5px] text-muted tracking-wider block font-mono truncate max-w-[130px]">
+                  <span className="font-bold text-ink text-sm tracking-tight truncate block">
+                    Clip Studio
+                  </span>
+                  <span className="text-[9.5px] text-muted tracking-wider block font-mono truncate">
                     AI VIDEO SHORTS
                   </span>
                 </div>
@@ -164,14 +156,16 @@ export default function Sidebar({
         </button>
 
         <a
-          href="mailto:info@openshorts.app"
-          title={collapsed ? 'info@openshorts.app' : undefined}
+          href="https://github.com/brijeshyadav2312/clip-studio/issues"
+          target="_blank"
+          rel="noopener noreferrer"
+          title={collapsed ? 'Feedback & Support' : undefined}
           className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted hover:text-ink hover:bg-paper2 transition-colors ${
             collapsed ? 'justify-center !px-0' : ''
           }`}
         >
           <Mail size={15} className="shrink-0 text-muted" />
-          {!collapsed && <span className="truncate min-w-0">info@openshorts.app</span>}
+          {!collapsed && <span className="truncate min-w-0">Support & Feedback</span>}
         </a>
       </div>
     </aside>
