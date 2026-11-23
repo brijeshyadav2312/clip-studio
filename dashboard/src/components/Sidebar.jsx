@@ -40,54 +40,61 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`bg-[#0d0f14] border-rule flex flex-col justify-between transition-all duration-300 ease-in-out z-30 shrink-0 select-none ${
+      className={`bg-[#0d0f14] border-rule flex flex-col justify-between transition-all duration-200 ease-in-out z-30 shrink-0 select-none ${
         sidebarPosition === 'right' ? 'border-l' : 'border-r'
-      } ${collapsed ? 'w-[78px]' : 'w-[260px]'}`}
+      } ${collapsed ? 'w-[72px]' : 'w-[250px]'}`}
     >
-      {/* Top Brand Header */}
+      {/* Top Brand Header (Fixed height h-16 = 64px perfectly aligned with main header) */}
       <div>
-        <div className="h-18 px-4 border-b border-rule flex items-center justify-between">
-          <div className="flex items-center gap-3 overflow-hidden">
-            {/* Logo Badge */}
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#ba6238] via-amber-600 to-[#8d421e] flex items-center justify-center text-white shrink-0 shadow-lg shadow-[#ba6238]/25 font-bold transition-all duration-200 hover:scale-105">
-              <Film size={20} className="drop-shadow-sm" />
+        <div className="h-16 border-b border-rule flex items-center px-3.5">
+          {collapsed ? (
+            /* Collapsed Mode: Clean centered expand button, no logo overflow glitch */
+            <div className="w-full flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => setCollapsed(!collapsed)}
+                className="w-10 h-10 flex items-center justify-center rounded-xl bg-paper2 hover:bg-paper3 border border-rule text-muted hover:text-ink transition-colors cursor-pointer"
+                title="Expand Sidebar"
+              >
+                <CollapseIcon size={18} />
+              </button>
             </div>
-            {!collapsed && (
-              <div className="min-w-0 animate-fade">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-ink text-base tracking-tight block truncate">
-                    Clip Studio
-                  </span>
-                  <span className="text-[9.5px] font-mono font-bold bg-[#ba6238]/20 text-[#ba6238] px-1.5 py-0.5 rounded border border-[#ba6238]/30">
-                    PRO
+          ) : (
+            /* Expanded Mode: Full brand title and collapse button with proper alignment */
+            <div className="w-full flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#ba6238] via-amber-600 to-[#8d421e] flex items-center justify-center text-white shrink-0 font-bold">
+                  <Film size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-ink text-sm tracking-tight truncate block max-w-[110px]">
+                      Clip Studio
+                    </span>
+                    <span className="text-[9px] font-mono font-bold bg-[#ba6238]/20 text-[#ba6238] px-1.5 py-0.2 rounded border border-[#ba6238]/30 shrink-0">
+                      PRO
+                    </span>
+                  </div>
+                  <span className="text-[9.5px] text-muted tracking-wider block font-mono truncate max-w-[130px]">
+                    AI VIDEO SHORTS
                   </span>
                 </div>
-                <span className="readout text-[10px] text-muted tracking-wider block font-mono mt-0.5">
-                  AI VIDEO SHORTS
-                </span>
               </div>
-            )}
-          </div>
 
-          {/* Collapse / Expand Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setCollapsed(!collapsed)}
-            className="p-2 text-muted hover:text-ink hover:bg-paper3 rounded-xl border border-transparent hover:border-rule transition-all duration-200 shrink-0 hover:scale-105 active:scale-95 cursor-pointer"
-            title={
-              collapsed
-                ? sidebarPosition === 'left'
-                  ? 'Expand Sidebar'
-                  : 'Expand Sidebar'
-                : 'Collapse Sidebar'
-            }
-          >
-            <CollapseIcon size={18} />
-          </button>
+              <button
+                type="button"
+                onClick={() => setCollapsed(!collapsed)}
+                className="p-1.5 text-muted hover:text-ink hover:bg-paper3 rounded-lg border border-rule transition-colors shrink-0 cursor-pointer"
+                title="Collapse Sidebar"
+              >
+                <CollapseIcon size={16} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Primary Navigation */}
-        <nav className="p-3 space-y-1.5 mt-2">
+        <nav className="p-2.5 space-y-1 mt-2">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = activeTab === item.id;
@@ -97,19 +104,19 @@ export default function Sidebar({
                 type="button"
                 onClick={() => setActiveTab(item.id)}
                 title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
                   active
-                    ? 'bg-gradient-to-r from-brass/15 to-transparent text-ink border-l-3 border-[#ba6238] shadow-md shadow-brass/5 font-semibold translate-x-1'
-                    : 'text-muted hover:text-ink hover:bg-paper2/70 border-l-3 border-transparent hover:translate-x-0.5'
-                } ${collapsed ? 'justify-center !px-0 !border-l-0' : ''}`}
+                    ? 'bg-paper3 text-ink border border-rule2 font-semibold'
+                    : 'text-muted hover:text-ink hover:bg-paper2/70 border border-transparent'
+                } ${collapsed ? 'justify-center !px-0' : ''}`}
               >
                 <Icon
-                  size={19}
-                  className={`transition-colors shrink-0 ${
+                  size={18}
+                  className={`shrink-0 transition-colors ${
                     active ? 'text-[#ba6238]' : 'text-muted group-hover:text-ink'
                   }`}
                 />
-                {!collapsed && <span className="truncate tracking-wide">{item.label}</span>}
+                {!collapsed && <span className="truncate min-w-0">{item.label}</span>}
               </button>
             );
           })}
@@ -117,18 +124,18 @@ export default function Sidebar({
       </div>
 
       {/* Bottom Footer Links */}
-      <div className="p-3 border-t border-rule space-y-1">
+      <div className="p-2.5 border-t border-rule space-y-0.5">
         <a
           href="https://github.com/brijeshyadav2312/clip-studio#readme"
           target="_blank"
           rel="noopener noreferrer"
           title={collapsed ? 'Landing Page' : undefined}
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm text-muted hover:text-ink hover:bg-paper2 transition-all duration-200 ${
+          className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted hover:text-ink hover:bg-paper2 transition-colors ${
             collapsed ? 'justify-center !px-0' : ''
           }`}
         >
-          <Globe size={16} className="shrink-0 text-muted hover:text-ink" />
-          {!collapsed && <span className="truncate tracking-wide">Landing Page</span>}
+          <Globe size={15} className="shrink-0 text-muted" />
+          {!collapsed && <span className="truncate min-w-0">Landing Page</span>}
         </a>
 
         <a
@@ -136,35 +143,35 @@ export default function Sidebar({
           target="_blank"
           rel="noopener noreferrer"
           title={collapsed ? 'Open Source' : undefined}
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm text-muted hover:text-ink hover:bg-paper2 transition-all duration-200 ${
+          className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted hover:text-ink hover:bg-paper2 transition-colors ${
             collapsed ? 'justify-center !px-0' : ''
           }`}
         >
-          <Github size={16} className="shrink-0 text-muted hover:text-ink" />
-          {!collapsed && <span className="truncate tracking-wide">Open Source</span>}
+          <Github size={15} className="shrink-0 text-muted" />
+          {!collapsed && <span className="truncate min-w-0">Open Source</span>}
         </a>
 
         <button
           type="button"
           onClick={() => setActiveTab('aiconnect')}
           title={collapsed ? 'Plans & Pricing' : undefined}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm text-muted hover:text-ink hover:bg-paper2 transition-all duration-200 cursor-pointer ${
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted hover:text-ink hover:bg-paper2 transition-colors cursor-pointer ${
             collapsed ? 'justify-center !px-0' : ''
           }`}
         >
-          <Sparkles size={16} className="text-[#ba6238] shrink-0" />
-          {!collapsed && <span className="truncate tracking-wide">Plans & Pricing</span>}
+          <Sparkles size={15} className="text-[#ba6238] shrink-0" />
+          {!collapsed && <span className="truncate min-w-0">Plans & Pricing</span>}
         </button>
 
         <a
           href="mailto:info@openshorts.app"
           title={collapsed ? 'info@openshorts.app' : undefined}
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm text-muted hover:text-ink hover:bg-paper2 transition-all duration-200 ${
+          className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted hover:text-ink hover:bg-paper2 transition-colors ${
             collapsed ? 'justify-center !px-0' : ''
           }`}
         >
-          <Mail size={16} className="shrink-0 text-muted hover:text-ink" />
-          {!collapsed && <span className="truncate tracking-wide">info@openshorts.app</span>}
+          <Mail size={15} className="shrink-0 text-muted" />
+          {!collapsed && <span className="truncate min-w-0">info@openshorts.app</span>}
         </a>
       </div>
     </aside>
