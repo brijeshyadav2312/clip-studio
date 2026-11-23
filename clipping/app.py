@@ -101,18 +101,64 @@ def fetch_url_info(req: UrlInfoRequest) -> dict:
     if not url:
         raise HTTPException(status_code=400, detail="Empty URL provided")
 
+    # Fast-path for YouTube via official public oEmbed (100ms response, zero rate-limit)
+    if any(domain in url.lower() for domain in ("youtube.com", "youtu.be")):
+        try:
+            import urllib.parse
+            import urllib.request
+            import json as pyjson
+            oe_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(url)}&format=json"
+            oe_req = urllib.request.Request(oe_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(oe_req, timeout=5) as resp:
+                oe_data = pyjson.loads(resp.read().decode())
+                thumb = oe_data.get("thumbnail_url") or ""
+                # Try higher resolution thumbnail if hqdefault
+                if "hqdefault.jpg" in thumb:
+                    thumb = thumb.replace("hqdefault.jpg", "maxresdefault.jpg")
+                return {
+                    "ok": True,
+                    "title": oe_data.get("title") or "YouTube Video",
+                    "uploader": oe_data.get("author_name") or "YouTube Creator",
+                    "duration": 0,
+                    "thumbnail": thumb,
+                    "view_count": None,
+                    "webpage_url": url,
+                }
+        except Exception:
+            pass
+
+    # Fast-path for Vimeo via oEmbed
+    if "vimeo.com" in url.lower():
+        try:
+            import urllib.parse
+            import urllib.request
+            import json as pyjson
+            voe_url = f"https://vimeo.com/api/oembed.json?url={urllib.parse.quote(url)}"
+            with urllib.request.urlopen(voe_url, timeout=5) as resp:
+                voe_data = pyjson.loads(resp.read().decode())
+                return {
+                    "ok": True,
+                    "title": voe_data.get("title") or "Vimeo Video",
+                    "uploader": voe_data.get("author_name") or "Vimeo Creator",
+                    "duration": voe_data.get("duration") or 0,
+                    "thumbnail": voe_data.get("thumbnail_url") or "",
+                    "view_count": None,
+                    "webpage_url": url,
+                }
+        except Exception:
+            pass
+
     opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "socket_timeout": 10,
+        "socket_timeout": 8,
         "extract_flat": False,
     }
     node_exe = shutil.which("node")
     if node_exe:
         opts["js_runtimes"] = {"node": {"path": node_exe}}
         opts["remote_components"] = ["ejs:github"]
-    # Check cookies file if present
     cookie_candidate = None
     if (DATA_DIR / "cookies.txt").exists():
         cookie_candidate = DATA_DIR / "cookies.txt"
