@@ -77,7 +77,7 @@ export default function App() {
     return 'system';
   };
 
-  // Smart Log Handler: Fixed creation timestamp, in-place percentage updates, no duplicate rows
+  // Smart Log Handler: Fixed creation timestamp, in-place percentage updates
   const updateStructuredLogs = (newStatus, newProgress, newMessage) => {
     if (!newMessage) return;
 
@@ -92,7 +92,6 @@ export default function App() {
       const copy = [...prev];
       const last = copy[copy.length - 1];
 
-      // Format progress text if available
       const pctText = newProgress > 0 ? `${Math.round(newProgress)}%` : null;
 
       // If the stage is the same as the previous log, update it in-place!
@@ -112,7 +111,7 @@ export default function App() {
       // Create new structured log entry with fixed creation timestamp
       const newEntry = {
         id: `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        time: nowTime, // Fixed forever!
+        time: nowTime,
         stage: currentStage,
         title: newMessage,
         progress: newProgress,
@@ -145,14 +144,12 @@ export default function App() {
         const data = await res.json();
         setActiveJob(data);
 
-        // Update logs with smart in-place percentage updates
         updateStructuredLogs(data.status, data.progress || 0, data.message);
 
         if (data.status === 'done') {
           setIsProcessing(false);
           clearInterval(pollTimerRef.current);
           localStorage.removeItem('clip_active_job');
-          // Complete all remaining logs
           setLogs((prev) => prev.map((l) => ({ ...l, status: 'completed' })));
           fetchData();
         } else if (data.status === 'error' || data.status === 'cancelled') {
@@ -222,7 +219,7 @@ export default function App() {
     }
   };
 
-  // Terminate active project on "+ new project" button click (clean state reset)
+  // Terminate active project on "New Project" button click
   const handleCancelProject = async () => {
     if (activeJob?.id) {
       try {
@@ -281,11 +278,19 @@ export default function App() {
     }
   };
 
+  const getPageTitle = () => {
+    if (activeTab === 'generator') return isProcessing || activeJob ? 'Live Workbench' : 'Clip Generator';
+    if (activeTab === 'history') return 'Shorts History';
+    if (activeTab === 'aiconnect') return 'AI Connect';
+    if (activeTab === 'settings') return 'Settings & Customization';
+    return 'Not Found';
+  };
+
   const validTabs = ['generator', 'history', 'aiconnect', 'settings'];
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#0a0c10] text-ink font-sans">
-      {/* If sidebarPosition is 'left' (DEFAULT), render sidebar first on the left */}
+      {/* If sidebarPosition is 'left' (DEFAULT), render sidebar on the left */}
       {sidebarPosition === 'left' && (
         <Sidebar
           activeTab={activeTab}
@@ -302,54 +307,50 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
-        {/* Subtle Top Status Bar */}
-        <header className="h-16 px-6 border-b border-rule bg-paper/80 backdrop-blur-md flex items-center justify-between shrink-0 z-20">
+        {/* Top Status Header Bar */}
+        <header className="h-18 px-6 sm:px-8 border-b border-rule bg-paper/80 backdrop-blur-md flex items-center justify-between shrink-0 z-20">
           <div className="flex items-center gap-3">
-            <span className="font-semibold text-ink text-sm sm:text-base tracking-tight capitalize">
-              {activeTab === 'generator' && (isProcessing || activeJob ? 'workbench' : 'generator')}
-              {activeTab === 'history' && 'history'}
-              {activeTab === 'aiconnect' && 'ai connect'}
-              {activeTab === 'settings' && 'settings'}
-              {!validTabs.includes(activeTab) && 'page not found'}
-            </span>
-            <span className="text-[10.5px] text-muted font-mono bg-paper3 px-2 py-0.5 rounded border border-rule">
-              OPENSHORTS PRO
+            <h2 className="font-bold text-ink text-base sm:text-lg tracking-tight">
+              {getPageTitle()}
+            </h2>
+            <span className="text-[10px] font-mono font-bold bg-[#ba6238]/15 text-[#ba6238] px-2 py-0.5 rounded border border-[#ba6238]/30">
+              OPENSHORTS ENGINE
             </span>
           </div>
 
           <div className="flex items-center gap-3 text-xs">
             {cookieStatus?.has_cookies && (
-              <span className="pill pill-ok text-xs font-mono hidden sm:inline-flex items-center gap-1.5 font-medium">
-                <Cookie size={13} /> cookies active
+              <span className="pill pill-ok text-xs font-mono hidden sm:inline-flex items-center gap-1.5 font-semibold">
+                <Cookie size={13} /> Cookies Active
               </span>
             )}
             <span
               onClick={() => setActiveTab('aiconnect')}
-              className="pill pill-muted hover:border-brass/50 text-xs font-mono cursor-pointer flex items-center gap-1.5 transition-colors font-medium"
+              className="pill pill-muted hover:border-[#ba6238]/60 text-xs font-mono cursor-pointer flex items-center gap-1.5 transition-colors font-semibold"
               title="Click to configure AI engine"
             >
-              <Sparkles size={13} className="text-brass" />
+              <Sparkles size={13} className="text-[#ba6238]" />
               <span>{config?.llm?.ready ? `AI: ${config.llm.provider}` : 'Local AI'}</span>
             </span>
           </div>
         </header>
 
         {/* Scrollable View Area wrapped in ErrorBoundary */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-7 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-5 sm:p-8 custom-scrollbar">
           {/* Error Banner */}
           {error && (
             <div className="max-w-3xl mx-auto mb-6 p-4 sm:p-5 rounded-2xl bg-err/10 border border-err/30 text-err text-xs sm:text-sm flex items-start justify-between gap-3 animate-fade shadow-xl">
               <div className="flex items-start gap-3">
                 <AlertCircle size={18} className="shrink-0 mt-0.5" />
                 <div className="space-y-1">
-                  <span className="font-semibold block">Processing Issue</span>
+                  <span className="font-bold block">Processing Issue</span>
                   <p className="leading-relaxed opacity-90">{error}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setError(null)}
-                className="text-err/70 hover:text-err p-1 rounded hover:bg-err/20 transition-colors shrink-0 cursor-pointer"
+                className="text-err/70 hover:text-err p-1 rounded-lg hover:bg-err/20 transition-colors shrink-0 cursor-pointer"
               >
                 <X size={16} />
               </button>
@@ -378,11 +379,12 @@ export default function App() {
               </div>
             )}
 
-            {/* Tab 2: History (1 Row 4 Clips Grid, Bulletproof Validation) */}
+            {/* Tab 2: History (Instant Optimistic Updates, Delete All, Refresh) */}
             {activeTab === 'history' && (
               <HistoryView
                 jobs={jobs}
                 onRefresh={fetchData}
+                onDeleteAll={() => setJobs([])}
                 onNavigateToGenerator={() => setActiveTab('generator')}
               />
             )}

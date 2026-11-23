@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Clock,
   Trash2,
@@ -10,26 +10,32 @@ import {
   Sparkles,
   RefreshCw,
   AlertTriangle,
-  Play,
-  Share2,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 
-export default function HistoryView({ jobs = [], onRefresh, onNavigateToGenerator }) {
+export default function HistoryView({ jobs = [], onRefresh, onDeleteAll, onNavigateToGenerator }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [toast, setToast] = useState(null);
 
-  // Bulletproof flattening of clips across all jobs
-  const allClips = useMemo(() => {
+  // Maintain local clips list for 100% instant optimistic updates
+  const [localClips, setLocalClips] = useState([]);
+
+  // Flatten clips from jobs prop whenever jobs changes
+  useEffect(() => {
     const list = [];
-    if (!Array.isArray(jobs)) return list;
+    if (!Array.isArray(jobs)) {
+      setLocalClips([]);
+      return;
+    }
 
     jobs.forEach((job) => {
       if (!job || typeof job !== 'object') return;
 
-      // Extract and format date safely
       let jobDateObj = new Date();
       if (job.created) {
-        // Unix timestamp in seconds or ms
         const ts = typeof job.created === 'number' && job.created < 10000000000 ? job.created * 1000 : job.created;
         jobDateObj = new Date(ts);
       } else if (job.created_at) {
@@ -46,7 +52,6 @@ export default function HistoryView({ jobs = [], onRefresh, onNavigateToGenerato
           })
         : 'Recently generated';
 
-      // Ensure clips is strictly an array of valid clip objects
       const rawClips = Array.isArray(job.clips) ? job.clips : [];
 
       rawClips.forEach((clip) => {
@@ -66,49 +71,68 @@ export default function HistoryView({ jobs = [], onRefresh, onNavigateToGenerato
       });
     });
 
-    // Sort newest first
-    return list.sort((a, b) => b.rawDate - a.rawDate);
+    list.sort((a, b) => b.rawDate - a.rawDate);
+    setLocalClips(list);
   }, [jobs]);
 
-  // Safely filter clips based on search query
-  const filteredClips = useMemo(() => {
-    if (!searchTerm.trim()) return allClips;
-    const q = searchTerm.toLowerCase();
-    return allClips.filter((c) => {
-      if (!c) return false;
-      const titleMatch = c.title && String(c.title).toLowerCase().includes(q);
-      const fileMatch = c.filename && String(c.filename).toLowerCase().includes(q);
-      const jobMatch = c.jobTitle && String(c.jobTitle).toLowerCase().includes(q);
-      const textMatch = c.text && String(c.text).toLowerCase().includes(q);
-      return titleMatch || fileMatch || jobMatch || textMatch;
-    });
-  }, [allClips, searchTerm]);
+  const showToast = (msg, type = 'ok') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
+  // Instant optimistic delete for single clip
   const handleDeleteClip = async (jobId, filename) => {
     if (!window.confirm(`Delete clip "${filename}"?`)) return;
+
+    // 1. Optimistically remove immediately from local state
+    setLocalClips((prev) => prev.filter((c) => !(c.jobId === jobId && c.filename === filename)));
+    showToast(`Clip deleted successfully`);
+
+    // 2. Perform backend deletion
     try {
       const res = await fetch(`/api/jobs/${jobId}/clips/${filename}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete clip');
+      if (!res.ok) throw new Error('Delete failed on server');
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error('Delete clip error:', err);
-      alert('Failed to delete clip');
+      showToast('Server failed to delete clip file', 'err');
     }
   };
 
+  // Instant optimistic delete for all history
   const handleDeleteAllHistory = async () => {
     if (!window.confirm('Are you sure you want to delete ALL clips and job history? This cannot be undone.')) {
       return;
     }
+
     setIsDeletingAll(true);
+    // 1. Instantly clear cards from UI
+    setLocalClips([]);
+    showToast('All clips and history deleted');
+
+    // 2. Perform backend bulk deletion
     try {
-      await fetch('/api/jobs', { method: 'DELETE' }).catch(() => null);
-      if (onRefresh) onRefresh();
+      await fetch('/api/jobs', { method: 'DELETE' });
+      if (onDeleteAll) onDeleteAll();
+      if (onRefresh) await onRefresh();
     } catch (err) {
       console.error('Error clearing history:', err);
-      alert('Failed to clear some history');
+      showToast('Failed to delete some files from server', 'err');
     } finally {
       setIsDeletingAll(false);
+    }
+  };
+
+  // Manual refresh with visual spinning indicator
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      if (onRefresh) await onRefresh();
+      showToast('History refreshed');
+    } catch (err) {
+      console.warn('Refresh error:', err);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -122,22 +146,53 @@ export default function HistoryView({ jobs = [], onRefresh, onNavigateToGenerato
     document.body.removeChild(a);
   };
 
+  // Search filter
+  const filteredClips = useMemo(() => {
+    if (!searchTerm.trim()) return localClips;
+    const q = searchTerm.toLowerCase();
+    return localClips.filter((c) => {
+      if (!c) return false;
+      const titleMatch = c.title && String(c.title).toLowerCase().includes(q);
+      const fileMatch = c.filename && String(c.filename).toLowerCase().includes(q);
+      const jobMatch = c.jobTitle && String(c.jobTitle).toLowerCase().includes(q);
+      const textMatch = c.text && String(c.text).toLowerCase().includes(q);
+      return titleMatch || fileMatch || jobMatch || textMatch;
+    });
+  }, [localClips, searchTerm]);
+
   return (
     <div className="w-full space-y-7 animate-fade">
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 p-4 rounded-xl shadow-2xl flex items-center gap-3 animate-fade text-xs sm:text-sm font-medium border ${
+            toast.type === 'ok'
+              ? 'bg-[#0e1713] text-ok border-ok/30'
+              : 'bg-[#1a0f0f] text-err border-err/30'
+          }`}
+        >
+          {toast.type === 'ok' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+          <span>{toast.msg}</span>
+          <button type="button" onClick={() => setToast(null)} className="ml-2 hover:opacity-80">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-rule pb-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <Clock size={22} className="text-brass" />
-            <h1 className="text-xl sm:text-2xl font-semibold text-ink lowercase tracking-tight">
-              clips history
+            <Clock size={22} className="text-[#ba6238]" />
+            <h1 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">
+              Clips History
             </h1>
-            <span className="pill pill-muted text-xs font-mono ml-2">
-              {allClips.length} {allClips.length === 1 ? 'clip' : 'clips'}
+            <span className="pill pill-muted text-xs font-mono ml-2 font-semibold">
+              {localClips.length} {localClips.length === 1 ? 'Clip' : 'Clips'}
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-muted mt-1">
-            Browse, preview, download, and manage all your generated vertical shorts.
+          <p className="text-xs sm:text-sm text-muted mt-1.5">
+            Browse, preview, download, and manage your rendered vertical shorts.
           </p>
         </div>
 
@@ -150,66 +205,68 @@ export default function HistoryView({ jobs = [], onRefresh, onNavigateToGenerato
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search clips…"
-              className="bg-paper2 border border-rule focus:border-brass rounded-card py-2 pl-9 pr-3 text-xs sm:text-sm text-ink placeholder:text-muted/60 focus:outline-none w-52 transition-all duration-200"
+              className="bg-paper2 border border-rule focus:border-[#ba6238] rounded-xl py-2 pl-9 pr-3 text-xs sm:text-sm text-ink placeholder:text-muted/60 focus:outline-none w-52 transition-all duration-200"
             />
           </div>
 
-          {/* Refresh Button */}
+          {/* Refresh Button with Spinner Animation */}
           <button
             type="button"
-            onClick={onRefresh}
-            className="p-2.5 bg-paper2 hover:bg-paper3 text-muted hover:text-ink border border-rule rounded-card transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer"
-            title="Refresh history"
+            disabled={isRefreshing}
+            onClick={handleManualRefresh}
+            className="p-2.5 bg-paper2 hover:bg-paper3 text-muted hover:text-ink border border-rule rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer"
+            title="Refresh History"
           >
-            <RefreshCw size={15} />
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin text-[#ba6238]' : ''} />
           </button>
 
           {/* Delete All History Button */}
-          {allClips.length > 0 && (
+          {localClips.length > 0 && (
             <button
               type="button"
               disabled={isDeletingAll}
               onClick={handleDeleteAllHistory}
-              className="flex items-center gap-2 px-3.5 py-2 bg-err/10 hover:bg-err/20 text-err border border-err/30 rounded-card text-xs sm:text-sm font-medium transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+              className="flex items-center gap-2 px-3.5 py-2 bg-err/10 hover:bg-err/20 text-err border border-err/30 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
               title="Delete all jobs and clips"
             >
               <Trash2 size={14} className={isDeletingAll ? 'animate-spin' : ''} />
-              <span>delete all</span>
+              <span>Delete All</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Responsive 4-Column Grid (1 row 4 clips on desktop) */}
+      {/* 4 Clips Per Row Responsive Grid */}
       {filteredClips.length === 0 ? (
         <div className="card p-16 border border-rule2 bg-[#0e1015] rounded-2xl flex flex-col items-center justify-center text-center space-y-4 shadow-xl">
-          <div className="w-14 h-14 rounded-full bg-paper3 border border-rule flex items-center justify-center text-muted shadow-inner">
+          <div className="w-14 h-14 rounded-2xl bg-paper3 border border-rule flex items-center justify-center text-muted shadow-inner">
             <Film size={26} />
           </div>
           <div className="space-y-1.5">
-            <h3 className="text-base font-semibold text-ink">No clips found</h3>
+            <h3 className="text-base font-semibold text-ink">No Clips in History</h3>
             <p className="text-xs sm:text-sm text-muted max-w-sm leading-relaxed">
               {searchTerm
-                ? 'No clips match your search query. Try searching for different keywords.'
-                : 'You have not generated any clips yet. Generate your first viral vertical clip!'}
+                ? 'No clips match your search query. Try searching with different keywords.'
+                : 'You have not generated any shorts yet, or all previous clips were deleted.'}
             </p>
           </div>
           {!searchTerm && onNavigateToGenerator && (
             <button
               type="button"
               onClick={onNavigateToGenerator}
-              className="mt-3 py-2.5 px-5 rounded-card bg-gradient-to-r from-[#ba6238] to-[#8d421e] text-white text-xs sm:text-sm font-semibold shadow-lg hover:brightness-110 active:scale-[0.99] transition-all cursor-pointer lowercase"
+              className="mt-3 py-2.5 px-6 rounded-xl bg-gradient-to-r from-[#ba6238] via-amber-600 to-[#8d421e] text-white text-xs sm:text-sm font-semibold shadow-lg shadow-[#ba6238]/20 hover:brightness-110 active:scale-[0.99] transition-all cursor-pointer"
             >
-              go to clip generator
+              Create New Shorts
             </button>
           )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
           {filteredClips.map((clip, index) => {
-            const videoUrl = clip.url || `/media/${clip.jobId}/${clip.filename}`;
+            const videoUrl = clip.url || `/media/${clip.jobId}/clips/${clip.filename}`;
             const srtFilename = String(clip.filename).replace(/\.mp4$/i, '.srt');
-            const srtUrl = clip.srt_url || `/media/${clip.jobId}/${srtFilename}`;
+            const srtUrl = clip.srt_url || `/media/${clip.jobId}/clips/${srtFilename}`;
+            const thumbUrl = clip.thumb_url || (clip.thumb ? `/media/${clip.jobId}/${clip.thumb}` : null);
             const durationSec = clip.duration
               ? Math.round(clip.duration)
               : Math.round((clip.end || 0) - (clip.start || 0));
@@ -218,12 +275,13 @@ export default function HistoryView({ jobs = [], onRefresh, onNavigateToGenerato
             return (
               <div
                 key={`${clip.jobId}-${clip.filename}-${index}`}
-                className="card p-3.5 border border-rule2 bg-[#0e1015] hover:border-brass/50 transition-all duration-300 shadow-xl rounded-2xl flex flex-col justify-between group hover:-translate-y-1"
+                className="card p-3.5 border border-rule2 bg-[#0e1015] hover:border-[#ba6238]/50 transition-all duration-300 shadow-xl rounded-2xl flex flex-col justify-between group hover:-translate-y-1"
               >
                 {/* 9:16 Video Player Preview */}
                 <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black flex items-center justify-center border border-rule shadow-inner">
                   <video
                     src={videoUrl}
+                    poster={thumbUrl || undefined}
                     controls
                     preload="metadata"
                     className="w-full h-full object-cover"
@@ -259,7 +317,7 @@ export default function HistoryView({ jobs = [], onRefresh, onNavigateToGenerato
                     <button
                       type="button"
                       onClick={(e) => handleDownload(e, videoUrl, clip.filename)}
-                      className="flex-1 py-2 px-2.5 bg-paper3 hover:bg-brass hover:text-brassink text-ink rounded-input text-xs font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 border border-rule cursor-pointer"
+                      className="flex-1 py-2 px-2.5 bg-paper3 hover:bg-[#ba6238] hover:text-white text-ink rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 border border-rule cursor-pointer"
                       title="Download MP4 video"
                     >
                       <Download size={13} />
@@ -269,7 +327,7 @@ export default function HistoryView({ jobs = [], onRefresh, onNavigateToGenerato
                     <button
                       type="button"
                       onClick={(e) => handleDownload(e, srtUrl, srtFilename)}
-                      className="py-2 px-3 bg-paper2 hover:bg-paper3 text-muted hover:text-ink rounded-input text-xs font-mono transition-colors border border-rule cursor-pointer"
+                      className="py-2 px-3 bg-paper2 hover:bg-paper3 text-muted hover:text-ink rounded-lg text-xs font-mono transition-colors border border-rule cursor-pointer"
                       title="Download Subtitles SRT"
                     >
                       SRT
@@ -278,7 +336,7 @@ export default function HistoryView({ jobs = [], onRefresh, onNavigateToGenerato
                     <button
                       type="button"
                       onClick={() => handleDeleteClip(clip.jobId, clip.filename)}
-                      className="p-2 bg-paper2 hover:bg-err/20 text-muted hover:text-err rounded-input transition-colors border border-rule shrink-0 cursor-pointer"
+                      className="p-2 bg-paper2 hover:bg-err/20 text-muted hover:text-err rounded-lg transition-colors border border-rule shrink-0 cursor-pointer"
                       title="Delete this clip"
                     >
                       <Trash2 size={14} />
