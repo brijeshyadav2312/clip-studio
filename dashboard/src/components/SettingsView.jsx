@@ -46,6 +46,9 @@ export default function SettingsView({
   const [browserCookies, setBrowserCookies] = useState(
     () => localStorage.getItem('clip_pref_browser_cookies') || ''
   );
+  const [previewMode, setPreviewMode] = useState(
+    () => localStorage.getItem('clip_pref_preview_mode') || 'thumbnail'
+  );
 
   const [savedToast, setSavedToast] = useState(false);
   const cookieInputRef = useRef(null);
@@ -60,6 +63,7 @@ export default function SettingsView({
     localStorage.setItem('clip_pref_cam_shape', streamerCamShape);
     localStorage.setItem('clip_pref_split_ratio', streamerSplitRatio);
     localStorage.setItem('clip_pref_browser_cookies', browserCookies);
+    localStorage.setItem('clip_pref_preview_mode', previewMode);
 
     setSavedToast(true);
     setTimeout(() => setSavedToast(false), 2500);
@@ -321,6 +325,45 @@ export default function SettingsView({
                 }`}
               >
                 Right
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-rule pt-4">
+            <div className="min-w-0">
+              <span className="text-xs sm:text-sm font-medium text-ink block truncate">Live Analysis Display</span>
+              <span className="text-xs text-muted block mt-0.5 truncate">
+                Show live video playback, video frame thumbnail, or holographic scan during processing.
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 bg-paper2 p-1 rounded-xl border border-rule shrink-0">
+              <button
+                type="button"
+                onClick={() => setPreviewMode('video_autoplay')}
+                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors cursor-pointer ${
+                  previewMode === 'video_autoplay' ? 'bg-[#ba6238] text-white font-bold' : 'text-muted hover:text-ink'
+                }`}
+              >
+                Autoplay Video
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewMode('thumbnail')}
+                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors cursor-pointer ${
+                  previewMode === 'thumbnail' ? 'bg-[#ba6238] text-white font-bold' : 'text-muted hover:text-ink'
+                }`}
+              >
+                Thumbnail
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewMode('cyber_wireframe')}
+                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors cursor-pointer ${
+                  previewMode === 'cyber_wireframe' ? 'bg-[#ba6238] text-white font-bold' : 'text-muted hover:text-ink'
+                }`}
+              >
+                Hologram
               </button>
             </div>
           </div>

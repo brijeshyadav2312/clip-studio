@@ -95,6 +95,17 @@ def process(
         title = manifest.get("title") or meta.get("title") or (
             Path(url).name if url else source.stem
         )
+        # Extract a fast video poster frame if available
+        poster = job_dir / "poster.jpg"
+        thumb_link = meta.get("thumbnail") or ""
+        if not poster.exists() and source.exists():
+            try:
+                render.run_ffmpeg(["-ss", "00:00:01", "-i", str(source), "-vframes", "1", "-q:v", "3", str(poster), "-y"])
+                if poster.exists():
+                    thumb_link = f"/media/{job_dir.name}/poster.jpg"
+            except Exception:
+                pass
+
         manifest["title"] = title
         manifest["source"] = {
             "file": source.name,
@@ -105,6 +116,8 @@ def process(
             "width": info["width"],
             "height": info["height"],
             "fps": round(info["fps"], 2),
+            "thumbnail": thumb_link,
+            "video_url": f"/media/{job_dir.name}/{source.name}" if source.exists() else "",
         }
         save("transcribing", 10, "Reading media")
 

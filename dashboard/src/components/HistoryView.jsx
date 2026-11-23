@@ -271,7 +271,7 @@ export default function HistoryView({ jobs = [], onRefresh, onDeleteAll, onNavig
                 {/* 9:16 Video Player Preview */}
                 <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black flex items-center justify-center border border-rule">
                   <video
-                    src={videoUrl}
+                    src={videoUrl || undefined}
                     poster={thumbUrl || undefined}
                     controls
                     preload="metadata"

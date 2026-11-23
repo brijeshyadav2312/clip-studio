@@ -95,6 +95,7 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
                     "uploader": data.get("uploader") or "",
                     "webpage_url": data.get("webpage_url") or url,
                     "duration": data.get("duration"),
+                    "thumbnail": data.get("thumbnail") or "",
                 }
     except Exception as exc:
         raw_msg = strip_ansi(str(exc))

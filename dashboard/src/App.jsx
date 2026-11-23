@@ -7,7 +7,7 @@ import AIConnectView from './components/AIConnectView';
 import SettingsView from './components/SettingsView';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotFoundView from './components/NotFoundView';
-import { AlertCircle, Film, Sparkles, Cookie, Activity, X, Github, Star } from 'lucide-react';
+import { AlertCircle, Film, Sparkles, Cookie, Activity, X, Github, Star, Plus } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('generator'); // 'generator' | 'history' | 'aiconnect' | 'settings'
@@ -25,6 +25,7 @@ export default function App() {
   const [logs, setLogs] = useState([]);
 
   const pollTimerRef = useRef(null);
+  const localPreviewUrlRef = useRef(null);
 
   const updateSidebarPosition = (pos) => {
     setSidebarPosition(pos);
@@ -133,6 +134,9 @@ export default function App() {
         }
 
         const data = await res.json();
+        if (localPreviewUrlRef.current) {
+          data.previewUrl = localPreviewUrlRef.current;
+        }
         setActiveJob(data);
 
         updateStructuredLogs(data.status, data.progress || 0, data.message);
@@ -148,7 +152,9 @@ export default function App() {
           clearInterval(pollTimerRef.current);
           localStorage.removeItem('clip_active_job');
           if (data.status === 'error') {
-            setError(data.error || data.message || 'Job processing failed');
+            const raw = data.error || data.message || 'Job processing failed';
+            const short = raw.split('\n').filter(Boolean)[0]?.slice(0, 160) || raw;
+            setError(short);
             setLogs((prev) =>
               prev.map((l, idx) => (idx === prev.length - 1 ? { ...l, status: 'error' } : l))
             );
@@ -166,6 +172,19 @@ export default function App() {
 
   const handleProcess = async ({ type, payload, options }) => {
     setError(null);
+    if (localPreviewUrlRef.current) {
+      URL.revokeObjectURL(localPreviewUrlRef.current);
+      localPreviewUrlRef.current = null;
+    }
+
+    if (type === 'file' && payload instanceof Blob) {
+      try {
+        localPreviewUrlRef.current = URL.createObjectURL(payload);
+      } catch (e) {
+        console.warn('Could not create preview object URL:', e);
+      }
+    }
+
     setLogs([
       {
         id: `init-${Date.now()}`,
@@ -198,14 +217,16 @@ export default function App() {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || errData.error || `Server responded with ${res.status}`);
+        const rawErr = errData.detail || errData.error || `Server responded with ${res.status}`;
+        throw new Error(typeof rawErr === 'string' ? rawErr.split('\n')[0] : 'Processing submission failed');
       }
 
       const data = await res.json();
       pollJob(data.id);
     } catch (err) {
       console.error('Job submission failed:', err);
-      setError(err.message || 'Failed to start video processing');
+      const msg = (err.message || 'Failed to start video processing').split('\n')[0]?.slice(0, 160);
+      setError(msg);
       setIsProcessing(false);
     }
   };
@@ -219,9 +240,14 @@ export default function App() {
       }
     }
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    if (localPreviewUrlRef.current) {
+      URL.revokeObjectURL(localPreviewUrlRef.current);
+      localPreviewUrlRef.current = null;
+    }
     localStorage.removeItem('clip_active_job');
     setActiveJob(null);
     setIsProcessing(false);
+    setError(null);
     setLogs([]);
     fetchData();
   };
@@ -302,11 +328,24 @@ export default function App() {
       <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
         {/* Top Status Header Bar (h-16 = 64px, pixel-aligned) */}
         <header className="h-16 px-4 sm:px-6 border-b border-rule bg-paper/90 backdrop-blur-md flex items-center justify-between shrink-0 z-20">
-          {/* Left: Page Title only (openshorts removed) */}
+          {/* Left: Page Title & New Project Action Button */}
           <div className="flex items-center gap-3 min-w-0">
-            <h2 className="font-bold text-ink text-base sm:text-lg tracking-tight truncate max-w-[240px] sm:max-w-md">
+            <h2 className="font-bold text-ink text-base sm:text-lg tracking-tight truncate max-w-[200px] sm:max-w-md">
               {getPageTitle()}
             </h2>
+
+            {/* Moved New Project button to header, clean and accessible */}
+            {(isProcessing || activeJob) && activeTab === 'generator' && (
+              <button
+                type="button"
+                onClick={handleCancelProject}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#ba6238]/40 hover:border-[#ba6238] bg-[#ba6238]/10 hover:bg-[#ba6238]/20 text-ink text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                title="Terminate active generation and start fresh"
+              >
+                <Plus size={14} className="text-[#ba6238] shrink-0" />
+                <span className="truncate">New Project</span>
+              </button>
+            )}
           </div>
 
           {/* Right: Cookies Badge, AI Icon Button (NO text), and Rate on GitHub */}

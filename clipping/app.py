@@ -29,6 +29,31 @@ STATIC_DIR = ROOT / "static"
 DIST_DIR = STATIC_DIR / "dist"
 
 app = FastAPI(title="Clip Studio", version="1.0")
+
+
+@app.on_event("startup")
+def clean_stale_jobs():
+    """Mark any leftover uncompleted jobs from previous server runs as cancelled/error."""
+    try:
+        for p in JOBS_DIR.glob("*/job.json"):
+            try:
+                data = read_json(p)
+                if data.get("status") in {"queued", "downloading", "transcribing", "ranking", "rendering"}:
+                    data["status"] = "error"
+                    data["error"] = "Process was terminated or server restarted"
+                    data["message"] = "Process was interrupted (server restarted)"
+                    data["updated"] = int(time.time())
+                    write_json(p, data)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+@app.get("/health")
+def root_health() -> dict:
+    return {"ok": True, "status": "healthy"}
+
 app.mount("/media", StaticFiles(directory=str(JOBS_DIR)), name="media")
 if (DIST_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
@@ -113,6 +138,11 @@ def _read_job(job_id: str) -> dict:
             JOB_CACHE[job_id] = data
 
     data["clips"] = _normalize_clips(job_id, data.get("clips") or [])
+    if "source" in data and isinstance(data["source"], dict):
+        if not data["source"].get("thumbnail") and (JOBS_DIR / job_id / "poster.jpg").exists():
+            data["source"]["thumbnail"] = f"/media/{job_id}/poster.jpg"
+        if not data["source"].get("video_url") and data["source"].get("file") and (JOBS_DIR / job_id / data["source"]["file"]).exists():
+            data["source"]["video_url"] = f"/media/{job_id}/{data['source']['file']}"
     return data
 
 

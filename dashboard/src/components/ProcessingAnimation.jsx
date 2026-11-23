@@ -31,6 +31,12 @@ export default function ProcessingAnimation({
   const progress = job?.progress || 0;
   const clips = Array.isArray(job?.clips) ? job.clips : [];
   const isDone = status === 'done';
+  const isError = status === 'error' || Boolean(job?.error);
+
+  // Preference for live analysis display: 'video_autoplay' | 'thumbnail' | 'cyber_wireframe'
+  const previewMode = localStorage.getItem('clip_pref_preview_mode') || 'thumbnail';
+  const videoSrc = job?.source?.video_url || job?.previewUrl;
+  const thumbSrc = job?.source?.thumbnail || job?.clips?.[0]?.thumb_url;
 
   // Auto-scroll log container smoothly
   useEffect(() => {
@@ -56,32 +62,6 @@ export default function ProcessingAnimation({
 
   return (
     <div className="w-full space-y-6 animate-fade">
-      {/* Top Header Bar: New Project button (Static, no scaling) & Profile */}
-      <div className="flex items-center justify-between py-2.5 border-b border-rule">
-        <button
-          type="button"
-          onClick={onCancelProject}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-rule hover:border-[#ba6238] bg-paper2 hover:bg-paper3 text-ink text-xs sm:text-sm font-medium transition-colors cursor-pointer shrink-0"
-          title="Terminate active generation and start fresh"
-        >
-          <Plus size={16} className="text-[#ba6238] shrink-0" />
-          <span className="truncate">New Project</span>
-        </button>
-
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-paper2 border border-rule text-muted text-xs">
-            <span className="font-mono text-ink tracking-wider font-semibold">4 0 MIN</span>
-            <span className="text-[#ba6238] text-[11px] font-bold uppercase hover:underline cursor-pointer">
-              Upgrade
-            </span>
-          </div>
-
-          <div className="w-8 h-8 rounded-full bg-paper3 border border-rule flex items-center justify-center text-xs font-bold text-ink shrink-0">
-            B
-          </div>
-        </div>
-      </div>
-
       {/* Split Workbench Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-7 items-start">
         {/* LEFT COLUMN: Live Analysis & Blueprint Canvas & Logs */}
@@ -90,18 +70,47 @@ export default function ProcessingAnimation({
             {/* Header: Live Analysis | Status Pill */}
             <div className="flex items-center justify-between border-b border-rule pb-3">
               <div className="flex items-center gap-2.5 min-w-0">
-                <Activity size={18} className="text-[#ba6238] animate-pulse shrink-0" />
+                <Activity
+                  size={18}
+                  className={`shrink-0 ${isError ? 'text-err' : 'text-[#ba6238] animate-pulse'}`}
+                />
                 <h3 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-ink font-mono truncate">
                   Live Analysis
                 </h3>
               </div>
-              <span className="pill pill-warn uppercase text-[10px] font-mono tracking-widest animate-pulse px-2 py-0.5 shrink-0">
-                {isDone ? 'Completed' : 'Processing'}
+              <span
+                className={`pill uppercase text-[10px] font-mono tracking-widest px-2 py-0.5 shrink-0 ${
+                  isError
+                    ? 'pill-err'
+                    : isDone
+                    ? 'pill-ok'
+                    : 'pill-warn animate-pulse'
+                }`}
+              >
+                {isError ? 'Failed' : isDone ? 'Completed' : 'Processing'}
               </span>
             </div>
 
             {/* Blueprint Video Scan Canvas */}
             <div className="relative aspect-video rounded-xl border border-rule overflow-hidden bg-black/95 flex items-center justify-center">
+              {/* Media Background based on Setting Configuration */}
+              {previewMode === 'video_autoplay' && videoSrc ? (
+                <video
+                  src={videoSrc}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="absolute inset-0 w-full h-full object-cover opacity-50 pointer-events-none"
+                />
+              ) : previewMode !== 'cyber_wireframe' && thumbSrc ? (
+                <img
+                  src={thumbSrc}
+                  alt="Video analysis frame"
+                  className="absolute inset-0 w-full h-full object-cover opacity-50 pointer-events-none"
+                />
+              ) : null}
+
               {/* Background Grid Lines */}
               <div
                 className="absolute inset-0 pointer-events-none opacity-20"
@@ -121,31 +130,41 @@ export default function ProcessingAnimation({
               </div>
 
               {/* Laser Scanning Line */}
-              {!isDone && (
+              {!isDone && !isError && (
                 <div className="absolute left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[#ba6238] to-transparent shadow-[0_0_12px_2px_var(--color-glow)] animate-scan pointer-events-none" />
               )}
 
               {/* Telemetry Readouts */}
               <div className="absolute top-3 left-3 z-10 pointer-events-none max-w-[45%] truncate">
                 <span className="readout text-[10px] sm:text-[11px] text-muted uppercase tracking-wider flex items-center gap-1.5 font-mono truncate">
-                  <span className="text-[#ba6238]">[ ]</span> SCANNING CONTENT...
+                  <span className="text-[#ba6238]">[ ]</span>{' '}
+                  {isError ? 'PROCESS STOPPED' : isDone ? 'ANALYSIS COMPLETE' : 'SCANNING CONTENT...'}
                 </span>
               </div>
 
               <div className="absolute top-3 right-3 z-10 pointer-events-none max-w-[45%] text-right truncate">
-                <span className="readout text-[10px] sm:text-[11px] text-[#ba6238] uppercase tracking-wider font-mono truncate">
-                  VIRAL_DETECTION: ACTIVE
+                <span
+                  className={`readout text-[10px] sm:text-[11px] uppercase tracking-wider font-mono truncate ${
+                    isError ? 'text-err' : 'text-[#ba6238]'
+                  }`}
+                >
+                  {isError ? 'ENGINE: OFFLINE' : 'VIRAL_DETECTION: ACTIVE'}
                 </span>
               </div>
 
               <div className="absolute bottom-3 left-3 z-10 pointer-events-none space-y-0.5 max-w-[65%] truncate">
                 <div className="readout text-[10px] sm:text-[11px] text-muted tracking-wider font-mono truncate">
-                  &gt; ANALYSIS_THREAD_01: ACTIVE
+                  &gt; ANALYSIS_THREAD_01: {isError ? 'FAILED' : 'ACTIVE'}
                 </div>
-                <div className="readout text-[10px] sm:text-[11px] text-[#ba6238]/90 tracking-wider font-mono truncate">
-                  &gt; AUDIO_TRANSCRIPT: PROCESSING
+                <div
+                  className={`readout text-[10px] sm:text-[11px] tracking-wider font-mono truncate ${
+                    isError ? 'text-err/90' : 'text-[#ba6238]/90'
+                  }`}
+                >
+                  &gt; AUDIO_TRANSCRIPT: {isError ? 'STOPPED' : isDone ? 'READY' : 'PROCESSING'}
                 </div>
               </div>
+
 
               {/* Waveform Equalizer */}
               <div className="absolute bottom-3 right-3 z-10 flex items-end gap-1 h-3.5 pointer-events-none">
@@ -197,7 +216,7 @@ export default function ProcessingAnimation({
             >
               <div className="flex items-center gap-2 font-mono text-xs truncate">
                 <Terminal size={14} className="text-[#ba6238] shrink-0" />
-                <span className="truncate">&gt;_ SYSTEM LOGS</span>
+                <span className="truncate">SYSTEM LOGS</span>
                 <span className="text-[10px] text-muted shrink-0">({logs.length} events)</span>
               </div>
               <ChevronDown
@@ -252,7 +271,7 @@ export default function ProcessingAnimation({
                     <Loader2 size={12} className="animate-spin text-[#ba6238] shrink-0" />
                   </div>
                 )}
-                {!isDone && <div className="text-[#ba6238] animate-pulse text-xs pl-1">_</div>}
+                {!isDone && !isError && <div className="text-[#ba6238] animate-pulse text-xs pl-1">_</div>}
               </div>
             )}
           </div>
@@ -270,18 +289,42 @@ export default function ProcessingAnimation({
           </div>
 
           {clips.length === 0 ? (
-            <div className="card p-12 border border-rule2 bg-[#0e1015] rounded-2xl flex flex-col items-center justify-center text-center min-h-[380px] space-y-4">
-              <div className="relative w-12 h-12 flex items-center justify-center">
-                <div className="w-10 h-10 border-2 border-[#ba6238]/20 border-t-[#ba6238] rounded-full animate-spin" />
-              </div>
+            isError ? (
+              <div className="card p-8 border border-err/30 bg-[#0e1015] rounded-2xl flex flex-col items-center justify-center text-center min-h-[360px] space-y-4">
+                <div className="w-12 h-12 rounded-full bg-err/10 border border-err/20 text-err flex items-center justify-center shrink-0">
+                  <AlertCircle size={24} />
+                </div>
 
-              <div className="space-y-1 max-w-full px-4">
-                <h4 className="text-sm sm:text-base font-semibold text-ink truncate">Analyzing Video & Detecting Hooks…</h4>
-                <p className="text-xs text-muted max-w-xs mx-auto leading-relaxed">
-                  Vertical shorts will appear here automatically as each clip finishes rendering.
-                </p>
+                <div className="space-y-1.5 max-w-sm">
+                  <h4 className="text-base font-semibold text-ink">Processing Failed</h4>
+                  <p className="text-xs text-muted leading-relaxed line-clamp-3">
+                    {job?.error || job?.message || 'Video processing was interrupted or encountered an unexpected issue.'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onCancelProject}
+                  className="px-4 py-2 rounded-xl bg-paper2 hover:bg-paper3 border border-rule hover:border-[#ba6238] text-ink text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Plus size={14} className="text-[#ba6238]" />
+                  <span>Start New Project</span>
+                </button>
               </div>
-            </div>
+            ) : (
+              <div className="card p-12 border border-rule2 bg-[#0e1015] rounded-2xl flex flex-col items-center justify-center text-center min-h-[380px] space-y-4">
+                <div className="relative w-12 h-12 flex items-center justify-center">
+                  <div className="w-10 h-10 border-2 border-[#ba6238]/20 border-t-[#ba6238] rounded-full animate-spin" />
+                </div>
+
+                <div className="space-y-1 max-w-full px-4">
+                  <h4 className="text-sm sm:text-base font-semibold text-ink truncate">Analyzing Video & Detecting Hooks…</h4>
+                  <p className="text-xs text-muted max-w-xs mx-auto leading-relaxed">
+                    Vertical shorts will appear here automatically as each clip finishes rendering.
+                  </p>
+                </div>
+              </div>
+            )
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade">
               {clips.map((clip, index) => (
