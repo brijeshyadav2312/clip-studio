@@ -60,10 +60,11 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
         "progress_hooks": [hook],
     }
 
-    # Enable Node.js JS runtime if available for modern YouTube extraction
+    # Enable Node.js JS runtime and challenge solver for modern YouTube extraction
     node_exe = shutil.which("node")
     if node_exe:
         opts["js_runtimes"] = {"node": {"path": node_exe}}
+        opts["remote_components"] = ["ejs:github"]
 
     # Check for cookies file (explicitly configured, or in data/cookies.txt, or root cookies.txt)
     cookie_candidate = None
