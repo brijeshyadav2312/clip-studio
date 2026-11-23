@@ -383,9 +383,9 @@ export default function App() {
 
         {/* View Area (Zero scrollbar for single-page generator) */}
         <div
-          className={`flex-1 ${
+          className={`flex-1 min-h-0 ${
             isSinglePageGenerator
-              ? 'overflow-hidden flex flex-col justify-center p-2 sm:p-4'
+              ? 'overflow-hidden flex flex-col p-4 sm:p-6 lg:p-7'
               : 'overflow-y-auto p-4 sm:p-7 custom-scrollbar'
           }`}
         >
@@ -412,7 +412,7 @@ export default function App() {
           <ErrorBoundary onReset={fetchData} onNavigateHome={() => setActiveTab('generator')}>
             {/* Tab 1: Clip Generator (Initial Input or Active Workbench) */}
             {activeTab === 'generator' && (
-              <div className={isSinglePageGenerator ? 'h-full flex items-center justify-center' : ''}>
+              <div className={isSinglePageGenerator ? 'h-full w-full' : ''}>
                 {isProcessing || activeJob ? (
                   <ProcessingAnimation
                     job={activeJob}
