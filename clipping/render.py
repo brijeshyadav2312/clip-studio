@@ -61,7 +61,83 @@ def render_clip(
             f"crop={plan['crop_w']}:{plan['crop_h']}:{x0}:0,"
             f"subtitles={ass},fps={fps},format=yuv420p[v]"
         )
-    else:
+    elif plan["mode"] == "gameplay_center":
+        gx, gy, gw, gh = plan.get("src_crop", (0, 0, 1080, 1920))
+        video = (
+            f"[0:v]crop={gw}:{gh}:{gx}:{gy},"
+            f"scale=1080:1920:flags=lanczos,"
+            f"subtitles={ass},fps={fps},format=yuv420p[v]"
+        )
+    elif plan["mode"] == "streamer_split":
+        s = plan["streamer"]
+        cx, cy, cw, ch = s["cam_crop"]
+        gx, gy, gw, gh = s["game_crop"]
+        top_h = s["top_h"]
+        bot_h = s["bot_h"]
+        divider = settings.streamer_divider
+        tag = (settings.streamer_tag or "").strip()
+
+        theme_colors = {
+            "purple_cyan": "0x7c5cff",
+            "cyan": "0x21d4a0",
+            "gold": "0xffca62",
+            "red": "0xff5c72",
+            "white": "0xffffff",
+        }
+        accent = theme_colors.get(settings.streamer_theme, "0x7c5cff")
+
+        filters = [
+            "[0:v]split=2[in_cam][in_game]",
+            f"[in_cam]crop={cw}:{ch}:{cx}:{cy},scale=1080:{top_h}:flags=lanczos[cam]",
+            f"[in_game]crop={gw}:{gh}:{gx}:{gy},scale=1080:{bot_h}:flags=lanczos[game]",
+            "[cam][game]vstack=inputs=2[stacked]",
+        ]
+        curr = "stacked"
+
+        if divider == "glow":
+            filters.append(f"[{curr}]drawbox=x=0:y={top_h - 2}:w=1080:h=4:color={accent}@0.95:t=fill[div]")
+            curr = "div"
+        elif divider == "subtle":
+            filters.append(f"[{curr}]drawbox=x=0:y={top_h - 1}:w=1080:h=2:color=0xffffff@0.35:t=fill[div]")
+            curr = "div"
+
+        if tag:
+            clean_tag = tag.replace(":", "\\:").replace("'", "")
+            filters.append(
+                f"[{curr}]drawtext=text='{clean_tag}':fontsize=24:fontcolor=white:box=1:boxcolor=black@0.70:boxborderw=6:x=(w-text_w)/2:y={top_h - 16}[tagged]"
+            )
+            curr = "tagged"
+
+        filters.append(f"[{curr}]subtitles={ass},fps={fps},format=yuv420p[v]")
+        video = ";".join(filters)
+    elif plan["mode"] == "streamer_pip":
+        s = plan["streamer"]
+        cx, cy, cw, ch = s["cam_crop"]
+        gx, gy, gw, gh = s["game_crop"]
+        corner = s["corner"]
+        pip_w = 340
+        pip_h = 240
+        margin = 24
+        pos_x = margin if "left" in corner else (1080 - pip_w - margin)
+        pos_y = (1920 - pip_h - 180) if "bottom" in corner else (margin + 120)
+
+        theme_colors = {
+            "purple_cyan": "0x7c5cff",
+            "cyan": "0x21d4a0",
+            "gold": "0xffca62",
+            "red": "0xff5c72",
+            "white": "0xffffff",
+        }
+        accent = theme_colors.get(settings.streamer_theme, "0x7c5cff")
+
+        video = (
+            f"[0:v]split=2[in_game][in_cam];"
+            f"[in_game]crop={gw}:{gh}:{gx}:{gy},scale=1080:1920:flags=lanczos[bg];"
+            f"[in_cam]crop={cw}:{ch}:{cx}:{cy},scale={pip_w}:{pip_h}:flags=lanczos,"
+            f"drawbox=x=0:y=0:w={pip_w}:h={pip_h}:color={accent}@0.95:t=3[pip];"
+            f"[bg][pip]overlay={pos_x}:{pos_y},subtitles={ass},fps={fps},format=yuv420p[v]"
+        )
+    else:  # gameplay_blur / blur
         video = (
             "[0:v]split=2[bg][fg];"
             "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"

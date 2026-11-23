@@ -41,6 +41,16 @@ class JobRequest(BaseModel):
     max_sec: float | None = Field(default=None, ge=10, le=300)
     layout: str | None = None
     caption_style: str | None = None
+    stabilization: str | None = None
+    streamer_split_ratio: str | None = None
+    streamer_cam_pos: str | None = None
+    streamer_cam_zoom: float | None = None
+    streamer_game_focus: str | None = None
+    streamer_divider: str | None = None
+    streamer_tag: str | None = None
+    streamer_cam_shape: str | None = None
+    streamer_bg: str | None = None
+    streamer_theme: str | None = None
     censor: bool = False
     hook: str | None = None
     title: str | None = None
@@ -139,6 +149,21 @@ def get_job(job_id: str) -> dict:
     return _read_job(job_id)
 
 
+@app.delete("/api/jobs")
+def delete_all_jobs() -> dict:
+    """Delete all jobs and their output files."""
+    deleted = []
+    with LOCK:
+        for path in JOBS_DIR.iterdir():
+            if path.is_dir():
+                try:
+                    pipeline.delete_job(path)
+                    deleted.append(path.name)
+                except Exception as exc:
+                    log(f"[jobs] failed to delete {path}: {exc}")
+    return {"deleted_count": len(deleted), "deleted_ids": deleted}
+
+
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str) -> dict:
     path = _job_path(job_id)
@@ -149,15 +174,26 @@ def delete_job(job_id: str) -> dict:
 
 @app.post("/api/jobs")
 def create_job(req: JobRequest) -> dict:
-    if not req.url:
-        raise HTTPException(status_code=400, detail="Provide a YouTube URL or upload a file.")
+    url = (req.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Please enter a valid YouTube URL.")
     if req.max_sec and req.min_sec and req.max_sec <= req.min_sec:
         raise HTTPException(status_code=400, detail="max_sec must be greater than min_sec")
     settings = settings_for(
         num_clips=req.num_clips, min_sec=req.min_sec, max_sec=req.max_sec,
         layout=req.layout, caption_style=req.caption_style,
+        stabilization=req.stabilization,
+        streamer_split_ratio=req.streamer_split_ratio,
+        streamer_cam_pos=req.streamer_cam_pos,
+        streamer_cam_zoom=req.streamer_cam_zoom,
+        streamer_game_focus=req.streamer_game_focus,
+        streamer_divider=req.streamer_divider,
+        streamer_tag=req.streamer_tag,
+        streamer_cam_shape=req.streamer_cam_shape,
+        streamer_bg=req.streamer_bg,
+        streamer_theme=req.streamer_theme,
     )
-    job_id = _start(settings, req.url.strip(), None, req.hook, req.censor, req.title)
+    job_id = _start(settings, url, None, req.hook, req.censor, req.title)
     return {"id": job_id}
 
 
@@ -169,6 +205,16 @@ async def create_upload_job(
     max_sec: float | None = Form(default=None),
     layout: str | None = Form(default=None),
     caption_style: str | None = Form(default=None),
+    stabilization: str | None = Form(default=None),
+    streamer_split_ratio: str | None = Form(default=None),
+    streamer_cam_pos: str | None = Form(default=None),
+    streamer_cam_zoom: float | None = Form(default=None),
+    streamer_game_focus: str | None = Form(default=None),
+    streamer_divider: str | None = Form(default=None),
+    streamer_tag: str | None = Form(default=None),
+    streamer_cam_shape: str | None = Form(default=None),
+    streamer_bg: str | None = Form(default=None),
+    streamer_theme: str | None = Form(default=None),
     censor: bool = Form(default=False),
     hook: str | None = Form(default=None),
     title: str | None = Form(default=None),
@@ -196,6 +242,16 @@ async def create_upload_job(
     settings = settings_for(
         num_clips=num_clips, min_sec=min_sec, max_sec=max_sec,
         layout=layout, caption_style=caption_style,
+        stabilization=stabilization,
+        streamer_split_ratio=streamer_split_ratio,
+        streamer_cam_pos=streamer_cam_pos,
+        streamer_cam_zoom=streamer_cam_zoom,
+        streamer_game_focus=streamer_game_focus,
+        streamer_divider=streamer_divider,
+        streamer_tag=streamer_tag,
+        streamer_cam_shape=streamer_cam_shape,
+        streamer_bg=streamer_bg,
+        streamer_theme=streamer_theme,
     )
     job_id = _start(settings, None, tmp, hook, censor, title or file.filename)
     return {"id": job_id, "duration": info["duration"]}

@@ -47,9 +47,35 @@ class Settings:
     caption_style: str = os.getenv("CLIP_CAPTION_STYLE", "wordpop")
     font: str = os.getenv("CLIP_FONT", "Arial Black")
     hook_sec: float = _float("CLIP_HOOK_SEC", 3.5)
-    # crop = fill the frame with a tracked 9:16 window; blur = whole frame + blurred backdrop;
-    # auto = crop when faces are found, blur otherwise (screen shares, gameplay, slides).
+    # Layout & reframing
+    # auto | crop | blur | streamer_split | streamer_pip | gameplay_center | gameplay_blur
     layout: str = os.getenv("CLIP_LAYOUT", "auto")
+    # Camera motion / stabilization: locked_tripod | smooth_cinematic | dynamic
+    stabilization: str = os.getenv("CLIP_STABILIZATION", "locked_tripod")
+    # Podcast multi-speaker dwell time in seconds before switching camera to another face
+    podcast_dwell_sec: float = _float("CLIP_PODCAST_DWELL_SEC", 2.5)
+
+    # Streamer / Gaming Customization (10 options)
+    # 1. Split ratio: 35_65 (cam 35%/game 65%), 30_70, 40_60, 50_50
+    streamer_split_ratio: str = os.getenv("CLIP_STREAMER_SPLIT", "35_65")
+    # 2. Camera position detection: auto | top-left | top-right | bottom-left | bottom-right
+    streamer_cam_pos: str = os.getenv("CLIP_STREAMER_CAM_POS", "auto")
+    # 3. Camera zoom level: 1.0 (wide) | 1.15 (standard) | 1.35 (close) | 1.5 (tight)
+    streamer_cam_zoom: float = _float("CLIP_STREAMER_CAM_ZOOM", 1.15)
+    # 4. Gameplay focal alignment: center (GTA car/crosshair) | center_low | center_high | action_track
+    streamer_game_focus: str = os.getenv("CLIP_STREAMER_GAME_FOCUS", "center")
+    # 5. Divider style: glow | subtle | none
+    streamer_divider: str = os.getenv("CLIP_STREAMER_DIVIDER", "glow")
+    # 6. Streamer tag / handle overlay: e.g. "@streamer"
+    streamer_tag: str = os.getenv("CLIP_STREAMER_TAG", "")
+    # 7. Cam shape: rect | rounded | circle
+    streamer_cam_shape: str = os.getenv("CLIP_STREAMER_CAM_SHAPE", "rect")
+    # 8. Background fill: blur | dark | black
+    streamer_bg: str = os.getenv("CLIP_STREAMER_BG", "blur")
+    # 9. Divider color theme: purple_cyan | gold | cyan | red | white
+    streamer_theme: str = os.getenv("CLIP_STREAMER_THEME", "purple_cyan")
+    # 10. PiP scale & placement (when layout is streamer_pip): small | medium | large
+    streamer_pip_size: str = os.getenv("CLIP_STREAMER_PIP_SIZE", "medium")
 
     # ASR
     whisper_model: str = os.getenv("WHISPER_MODEL", "base")
@@ -86,6 +112,18 @@ class Settings:
             "min_sec": self.min_sec,
             "max_sec": self.max_sec,
             "layout": self.layout,
+            "stabilization": self.stabilization,
+            "podcast_dwell_sec": self.podcast_dwell_sec,
+            "streamer_split_ratio": self.streamer_split_ratio,
+            "streamer_cam_pos": self.streamer_cam_pos,
+            "streamer_cam_zoom": self.streamer_cam_zoom,
+            "streamer_game_focus": self.streamer_game_focus,
+            "streamer_divider": self.streamer_divider,
+            "streamer_tag": self.streamer_tag,
+            "streamer_cam_shape": self.streamer_cam_shape,
+            "streamer_bg": self.streamer_bg,
+            "streamer_theme": self.streamer_theme,
+            "streamer_pip_size": self.streamer_pip_size,
             "caption_style": self.caption_style,
             "whisper_model": self.whisper_model,
             "llm_provider": self.llm_provider,

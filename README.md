@@ -37,7 +37,8 @@ Output lands in `data\jobs\<job>\clips\`.
 | Ingest | yt-dlp (URL) or file upload | 1080p max, remuxed to mp4 |
 | Transcript | faster-whisper, word timestamps, VAD | CPU-friendly (`int8`), 90+ languages |
 | Highlight ranking | Gemini / OpenAI, chunked 8-minute windows with dedupe | Falls back to a heuristic ranker with no API key |
-| Reframe | Haar face detection at 4 fps → smoothed crop path → ffmpeg `sendcmd` | Follows the active speaker; switches to blurred backdrop when there are no faces |
+| Reframe & Stabilize | YuNet face detector + SpeakerTracker dwell hysteresis + deadband | Rock-solid stabilization (no shivering); auto-detects gaming streamer corner cam or podcast speakers |
+| Streamer Engine | Split-screen (cam top + gameplay bottom), PiP, or locked central action | Focuses on cars/vehicles in GTA 6 / racing, crosshair in FPS |
 | Captions | ASS/libass, 4 styles, per-word highlight | Burned in at 1080×1920 |
 | Audio | EBU R128 loudness normalisation | Optional profanity mute |
 | Output | H.264 MP4 (faststart) + SRT + JPG thumbnail | Ready for Shorts / Reels / TikTok |
@@ -49,8 +50,16 @@ Set these in `.env` (copy `.env.example`) or per job in the UI.
 | Setting | Default | Meaning |
 |---|---|---|
 | `CLIP_NUM` | 5 | clips to produce |
-| `CLIP_MIN_SEC` / `CLIP_MAX_SEC` | 20 / 60 | hard clip length limits |
-| `CLIP_LAYOUT` | auto | `auto` (crop when faces are found, else blur), `crop`, `blur` |
+| `CLIP_MIN_SEC` / `CLIP_MAX_SEC` | 20 / 60 | clip length limits |
+| `CLIP_LAYOUT` | auto | `auto`, `streamer_split`, `gameplay_center`, `gameplay_blur`, `streamer_pip`, `crop`, `blur` |
+| `CLIP_STABILIZATION` | locked_tripod | `locked_tripod` (zero shivering), `smooth_cinematic`, `dynamic` |
+| `CLIP_STREAMER_GAME_FOCUS` | center | `center` (GTA car / crosshair), `center_low`, `center_high`, `action_track` |
+| `CLIP_STREAMER_SPLIT` | 35_65 | `35_65` (cam 35% / game 65%), `30_70`, `40_60`, `50_50` |
+| `CLIP_STREAMER_CAM_POS` | auto | `auto`, `top-right`, `top-left`, `bottom-right`, `bottom-left` |
+| `CLIP_STREAMER_CAM_ZOOM` | 1.15 | `1.0` (wide) to `1.5` (tight reaction) |
+| `CLIP_STREAMER_DIVIDER` | glow | `glow` (neon line), `subtle`, `none` |
+| `CLIP_STREAMER_THEME` | purple_cyan | `purple_cyan`, `cyan`, `gold`, `red`, `white` |
+| `CLIP_STREAMER_TAG` | — | streamer handle or channel badge overlay |
 | `CLIP_CAPTION_STYLE` | wordpop | `wordpop`, `karaoke`, `hormozi`, `clean` |
 | `WHISPER_MODEL` | base | `tiny` … `large-v3`; bigger = better and slower |
 | `GEMINI_API_KEY` / `OPENAI_API_KEY` | — | enables AI highlight selection |

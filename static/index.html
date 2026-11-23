@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Clip Studio — long video to vertical shorts</title>
+<title>Clip Studio — Long Video to Vertical Shorts</title>
 <style>
   :root {
     --bg: #0a0b10;
@@ -15,6 +15,7 @@
     --accent: #7c5cff;
     --accent-2: #21d4a0;
     --danger: #ff5c72;
+    --gold: #ffca62;
     --radius: 14px;
   }
   * { box-sizing: border-box; }
@@ -28,21 +29,22 @@
     min-height: 100vh;
   }
   header {
-    max-width: 1180px; margin: 0 auto; padding: 28px 22px 8px;
+    max-width: 1180px; margin: 0 auto; padding: 26px 22px 10px;
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
   }
   .brand { display: flex; align-items: center; gap: 12px; }
   .logo {
-    width: 38px; height: 38px; border-radius: 11px;
+    width: 40px; height: 40px; border-radius: 11px;
     background: linear-gradient(135deg, var(--accent), #ff7ac8);
     display: grid; place-items: center; font-weight: 800; font-size: 15px;
+    box-shadow: 0 4px 18px rgba(124, 92, 255, 0.35);
   }
   h1 { font-size: 19px; margin: 0; letter-spacing: -0.3px; }
   .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .pill {
-    font-size: 11.5px; padding: 6px 11px; border-radius: 999px;
+    font-size: 11.5px; padding: 6px 12px; border-radius: 999px;
     border: 1px solid var(--line); color: var(--muted); background: #0f1118;
-    white-space: nowrap;
+    white-space: nowrap; transition: all 0.2s ease;
   }
   .pill.ok { color: var(--accent-2); border-color: #1d4a3d; background: #0c1f1b; }
   .pill.warn { color: #ffca62; border-color: #4a3c17; background: #1f1a0c; }
@@ -50,59 +52,123 @@
   main { max-width: 1180px; margin: 0 auto; padding: 14px 22px 80px; }
   .card {
     background: linear-gradient(180deg, rgba(255,255,255,0.025), transparent), var(--panel);
-    border: 1px solid var(--line); border-radius: var(--radius); padding: 18px;
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
   }
   .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
   .tab {
-    padding: 8px 14px; border-radius: 10px; font-size: 13.5px; cursor: pointer;
+    padding: 8px 16px; border-radius: 10px; font-size: 13.5px; cursor: pointer;
     border: 1px solid transparent; color: var(--muted); background: transparent;
+    transition: all 0.15s ease;
   }
-  .tab.active { background: var(--panel-2); border-color: var(--line); color: var(--text); }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--panel-2); border-color: var(--line); color: var(--text); font-weight: 600; }
 
-  .row { display: flex; gap: 10px; }
+  .row { display: flex; gap: 10px; align-items: center; }
   input[type=text], input[type=number], select {
     width: 100%; background: #0c0e14; color: var(--text);
     border: 1px solid var(--line); border-radius: 11px; padding: 13px 14px;
-    font-size: 14px; outline: none;
+    font-size: 14px; outline: none; transition: all 0.2s;
   }
-  input:focus, select:focus { border-color: #4a3f8f; box-shadow: 0 0 0 3px rgba(124,92,255,0.12); }
+  input:focus, select:focus {
+    border-color: #7c5cff;
+    box-shadow: 0 0 0 3px rgba(124,92,255,0.18);
+  }
   .btn {
-    border: 0; border-radius: 11px; padding: 13px 22px; font-size: 14px; font-weight: 650;
+    border: 0; border-radius: 11px; padding: 13px 24px; font-size: 14px; font-weight: 650;
     cursor: pointer; background: linear-gradient(135deg, var(--accent), #a06bff); color: white;
-    white-space: nowrap;
+    white-space: nowrap; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 4px 14px rgba(124, 92, 255, 0.25);
   }
-  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(124, 92, 255, 0.4);
+  }
+  .btn:active:not(:disabled) { transform: translateY(0); }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    background: #252836;
+    color: #697086;
+    box-shadow: none;
+    transform: none;
+  }
   .btn.ghost { background: #14161f; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  .btn.ghost:hover { background: #1c202e; }
 
-  details { margin-top: 14px; }
-  summary { cursor: pointer; font-size: 13px; color: var(--muted); user-select: none; }
+  .btn-sm {
+    border: 0; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .btn-sm.danger {
+    background: rgba(255, 92, 114, 0.12); color: var(--danger);
+    border: 1px solid rgba(255, 92, 114, 0.3);
+  }
+  .btn-sm.danger:hover {
+    background: var(--danger); color: white;
+  }
+
+  details { margin-top: 16px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; background: rgba(0,0,0,0.15); }
+  details[open] { background: rgba(0,0,0,0.25); }
+  summary {
+    cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted);
+    user-select: none; display: flex; align-items: center; justify-content: space-between;
+  }
   summary:hover { color: var(--text); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
-  .field label { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+  summary::marker { display: none; }
+  summary::-webkit-details-marker { display: none; }
+
+  .options-badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+  }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
+  .field label {
+    display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px;
+    text-transform: uppercase; letter-spacing: .5px; font-weight: 600;
+  }
+  .field-desc { font-size: 10.5px; color: #6f7892; margin-top: 4px; line-height: 1.3; }
+  .section-divider {
+    grid-column: 1 / -1; margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid var(--line); font-size: 12px; font-weight: 700;
+    color: var(--accent); letter-spacing: 0.5px; text-transform: uppercase;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-divider span {
+    font-size: 10.5px; font-weight: 500; color: var(--muted); text-transform: none;
+  }
   .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-top: 14px; }
 
   .drop {
-    margin-top: 12px; border: 1.5px dashed #2b3145; border-radius: 12px; padding: 22px;
+    margin-top: 12px; border: 1.5px dashed #2b3145; border-radius: 12px; padding: 24px;
     text-align: center; color: var(--muted); font-size: 13.5px; cursor: pointer;
+    transition: all 0.2s ease;
   }
-  .drop.over { border-color: var(--accent); color: var(--text); background: rgba(124,92,255,.06); }
+  .drop:hover { border-color: var(--accent); color: var(--text); }
+  .drop.over { border-color: var(--accent); color: var(--text); background: rgba(124,92,255,.08); }
 
   .progress-wrap { margin-top: 16px; display: none; }
   .bar { height: 8px; border-radius: 999px; background: #0c0e14; overflow: hidden; border: 1px solid var(--line); }
   .bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .4s ease; }
   .status { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-top: 8px; gap: 12px; }
-  .error { color: var(--danger); font-size: 13px; margin-top: 12px; white-space: pre-wrap; }
+  .error {
+    color: var(--danger); font-size: 13px; margin-top: 12px; padding: 10px 14px;
+    background: rgba(255, 92, 114, 0.1); border: 1px solid rgba(255, 92, 114, 0.25);
+    border-radius: 9px; white-space: pre-wrap;
+  }
 
   section { margin-top: 34px; }
   .section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
-  h2 { font-size: 15px; margin: 0; letter-spacing: -0.2px; }
+  h2 { font-size: 15px; margin: 0; letter-spacing: -0.2px; font-weight: 700; }
   .hint { font-size: 12px; color: var(--muted); }
 
   .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 16px; }
   .clip {
     background: var(--panel); border: 1px solid var(--line); border-radius: 13px; overflow: hidden;
-    display: flex; flex-direction: column;
+    display: flex; flex-direction: column; transition: transform 0.2s ease;
   }
+  .clip:hover { transform: translateY(-2px); border-color: #3b425c; }
   .clip video { width: 100%; aspect-ratio: 9 / 16; background: #05060a; display: block; object-fit: cover; }
   .clip .meta { padding: 11px 12px 13px; display: flex; flex-direction: column; gap: 8px; }
   .clip .title { font-size: 13px; font-weight: 600; line-height: 1.35; }
@@ -113,26 +179,56 @@
   .actions a {
     flex: 1; text-align: center; text-decoration: none; font-size: 12px; padding: 8px;
     border-radius: 9px; border: 1px solid var(--line); color: var(--text); background: #0f1118;
+    transition: all 0.15s;
   }
-  .actions a:hover { border-color: #3b3f57; }
+  .actions a:hover { border-color: #3b3f57; background: #171a26; }
+
+  /* Collapsible Jobs Card */
+  .collapsible-card {
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--panel); overflow: hidden; padding: 0; margin-top: 34px;
+  }
+  .collapsible-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; background: var(--panel-2); cursor: pointer;
+    list-style: none; user-select: none;
+  }
+  .collapsible-head:hover { background: #1c202d; }
+  .collapsible-title { display: flex; align-items: center; gap: 10px; }
+  .collapsible-title .chevron {
+    font-size: 10px; color: var(--muted); transition: transform 0.2s;
+  }
+  details[open] .chevron { transform: rotate(0deg); }
+  details:not([open]) .chevron { transform: rotate(-90deg); }
+  .badge {
+    font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+    background: var(--line); color: var(--muted);
+  }
+  .collapsible-content { padding: 16px 20px; }
 
   .jobs { display: flex; flex-direction: column; gap: 8px; }
   .job {
-    display: flex; align-items: center; gap: 12px; padding: 11px 13px; font-size: 13px;
-    border: 1px solid var(--line); border-radius: 11px; background: var(--panel); cursor: pointer;
+    display: flex; align-items: center; gap: 12px; padding: 11px 14px; font-size: 13px;
+    border: 1px solid var(--line); border-radius: 11px; background: #0e1017; cursor: pointer;
+    transition: all 0.15s ease;
   }
-  .job:hover { border-color: #343a52; }
-  .job .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job:hover { border-color: #3f4765; background: #131620; }
+  .job .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .job .state { font-size: 11.5px; color: var(--muted); }
   .job .state.done { color: var(--accent-2); }
   .job .state.error { color: var(--danger); }
-  .job .del { color: var(--muted); font-size: 12px; padding: 2px 6px; border-radius: 6px; }
-  .job .del:hover { color: var(--danger); background: #1a0f13; }
+  .job .del {
+    color: var(--muted); font-size: 12px; padding: 3px 8px; border-radius: 6px;
+    transition: all 0.15s;
+  }
+  .job .del:hover { color: var(--danger); background: rgba(255,92,114,0.15); }
   .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
   .hidden { display: none !important; }
+
   @media (max-width: 640px) {
-    .row { flex-direction: column; }
+    .row { flex-direction: column; align-items: stretch; }
     header { padding-top: 18px; }
+    .grid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -142,7 +238,7 @@
     <div class="logo">CS</div>
     <div>
       <h1>Clip Studio</h1>
-      <div class="sub">Long video in, vertical captioned shorts out. Everything runs on your machine.</div>
+      <div class="sub">Long video in, vertical captioned shorts out. Everything runs locally on your PC.</div>
     </div>
   </div>
   <div id="llmPill" class="pill">checking…</div>
@@ -155,13 +251,15 @@
       <button class="tab" data-tab="file">Upload file</button>
     </div>
 
+    <!-- YouTube Tab -->
     <div id="tab-url">
       <div class="row">
-        <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" />
-        <button id="go" class="btn">Make clips</button>
+        <input id="url" type="text" placeholder="Paste YouTube link (e.g. https://www.youtube.com/watch?v=…)" autocomplete="off" />
+        <button id="go" class="btn" disabled>Make clips</button>
       </div>
     </div>
 
+    <!-- File Tab -->
     <div id="tab-file" class="hidden">
       <div id="drop" class="drop">Drop a video here, or click to choose (mp4, mov, mkv, webm)</div>
       <input id="file" type="file" accept="video/*" class="hidden" />
@@ -171,34 +269,190 @@
       </div>
     </div>
 
-    <details>
-      <summary>Options</summary>
+    <!-- Options & Streamer / Podcast Customization -->
+    <details id="optionsDetails">
+      <summary>
+        <span>Customization & Framing Options</span>
+        <span class="options-badge">10 Streamer & Podcast Controls</span>
+      </summary>
+
       <div class="grid">
-        <div class="field"><label>Clips</label><input id="num" type="number" min="1" max="20" value="5" /></div>
-        <div class="field"><label>Min seconds</label><input id="min" type="number" min="8" max="180" value="20" /></div>
-        <div class="field"><label>Max seconds</label><input id="max" type="number" min="10" max="300" value="60" /></div>
+        <!-- Core Clip Options -->
         <div class="field">
-          <label>Layout</label>
-          <select id="layout">
-            <option value="auto">Auto (crop if faces, else blur)</option>
-            <option value="crop">Crop to speaker</option>
-            <option value="blur">Full frame + blur</option>
-          </select>
+          <label>Clips Count</label>
+          <input id="num" type="number" min="1" max="20" value="5" />
+          <div class="field-desc">How many highlight shorts to generate</div>
         </div>
         <div class="field">
-          <label>Captions</label>
+          <label>Min Seconds</label>
+          <input id="min" type="number" min="8" max="180" value="20" />
+          <div class="field-desc">Shortest clip length</div>
+        </div>
+        <div class="field">
+          <label>Max Seconds</label>
+          <input id="max" type="number" min="10" max="300" value="60" />
+          <div class="field-desc">Longest clip length</div>
+        </div>
+        <div class="field">
+          <label>Caption Style</label>
           <select id="style">
-            <option value="wordpop">Word pop</option>
-            <option value="karaoke">Karaoke</option>
-            <option value="hormozi">Hormozi</option>
-            <option value="clean">Clean</option>
+            <option value="wordpop">Word Pop (Dynamic highlight)</option>
+            <option value="karaoke">Karaoke (Smooth sweep)</option>
+            <option value="hormozi">Hormozi (Bold pop)</option>
+            <option value="clean">Clean (Subtle subtitles)</option>
           </select>
+          <div class="field-desc">Burned-in animated typography</div>
         </div>
-        <div class="field"><label>Hook text (optional)</label><input id="hook" type="text" placeholder="AI picks it" /></div>
+
+        <!-- Section 1: Framing & Camera Stabilization -->
+        <div class="section-divider">
+          Layout & Framing Presets <span>(Auto-switches or choose explicitly)</span>
+        </div>
+
+        <div class="field" style="grid-column: span 2;">
+          <label>Layout Mode</label>
+          <select id="layout">
+            <option value="auto">Auto (Smart detect: Streamer / Podcast / Gameplay)</option>
+            <option value="streamer_split">Streamer Split (Webcam Top + Gameplay Bottom) [Shorts standard]</option>
+            <option value="gameplay_center">Gameplay Center Action (Locks onto Vehicle / Crosshair / GTA 6)</option>
+            <option value="gameplay_blur">Gameplay Full Frame + Blurred Backdrop</option>
+            <option value="streamer_pip">Streamer Picture-in-Picture (Floating Facecam)</option>
+            <option value="crop">Podcast Speaker Crop (Face-Tracked Vertical)</option>
+            <option value="blur">Full Video + Blurred Mirror</option>
+          </select>
+          <div class="field-desc">Choose split-screen for gamer streams, center for vehicle/action, or crop for podcasts</div>
+        </div>
+
+        <div class="field" style="grid-column: span 2;">
+          <label>Camera Motion & Stabilization</label>
+          <select id="stabilization">
+            <option value="locked_tripod">Tripod Lock (Zero Shivering - Rock solid, pans only on real speaker moves)</option>
+            <option value="smooth_cinematic">Smooth Cinematic Pan (Gentle damping)</option>
+            <option value="dynamic">Dynamic Fast Tracking</option>
+          </select>
+          <div class="field-desc">Deadband prevents head-wobble shivering; holds steady like a tripod</div>
+        </div>
+
+        <!-- Section 2: Streamer & Gaming Customization (10 options) -->
+        <div class="section-divider">
+          Streamer / Gaming Customization <span>(10 Pro controls for GTA, gaming, podcasts)</span>
+        </div>
+
+        <!-- 1. Gameplay Focus (The GTA 6 / Car fix) -->
+        <div class="field">
+          <label>1. Gameplay Action Focus</label>
+          <select id="streamer_game_focus">
+            <option value="center">Center (Vehicle / GTA Car / Crosshair)</option>
+            <option value="center_low">Center-Low (Road & Car bottom biased)</option>
+            <option value="center_high">Center-High (Overhead / Flight / Minimap)</option>
+            <option value="action_track">Action Track (Motion weighted)</option>
+          </select>
+          <div class="field-desc">Prevents cutting off the vehicle/character</div>
+        </div>
+
+        <!-- 2. Split Ratio -->
+        <div class="field">
+          <label>2. Cam / Game Split Ratio</label>
+          <select id="streamer_split_ratio">
+            <option value="35_65">35% Cam / 65% Game (Recommended)</option>
+            <option value="30_70">30% Cam / 70% Game (Max Gameplay)</option>
+            <option value="40_60">40% Cam / 60% Game</option>
+            <option value="50_50">50% Cam / 50% Game (Equal Split)</option>
+          </select>
+          <div class="field-desc">Vertical height allocation</div>
+        </div>
+
+        <!-- 3. Facecam Position -->
+        <div class="field">
+          <label>3. Facecam Position</label>
+          <select id="streamer_cam_pos">
+            <option value="auto">Auto-Detect Corner</option>
+            <option value="top-right">Top-Right Corner</option>
+            <option value="top-left">Top-Left Corner</option>
+            <option value="bottom-right">Bottom-Right Corner</option>
+            <option value="bottom-left">Bottom-Left Corner</option>
+          </select>
+          <div class="field-desc">Where streamer webcam sits on screen</div>
+        </div>
+
+        <!-- 4. Facecam Zoom -->
+        <div class="field">
+          <label>4. Facecam Framing Zoom</label>
+          <select id="streamer_cam_zoom">
+            <option value="1.15">1.15x (Standard Balanced)</option>
+            <option value="1.0">1.0x (Wide - Room & Setup)</option>
+            <option value="1.35">1.35x (Close Reaction)</option>
+            <option value="1.5">1.5x (Tight Face Focus)</option>
+          </select>
+          <div class="field-desc">Webcam crop tightness</div>
+        </div>
+
+        <!-- 5. Divider Line -->
+        <div class="field">
+          <label>5. Divider Style</label>
+          <select id="streamer_divider">
+            <option value="glow">Neon Glow Divider Line</option>
+            <option value="subtle">Subtle 2px Border</option>
+            <option value="none">Seamless (No Line)</option>
+          </select>
+          <div class="field-desc">Boundary between Cam and Gameplay</div>
+        </div>
+
+        <!-- 6. Theme Color -->
+        <div class="field">
+          <label>6. Theme Accent Color</label>
+          <select id="streamer_theme">
+            <option value="purple_cyan">Cyber Purple (#7c5cff)</option>
+            <option value="cyan">Neon Mint (#21d4a0)</option>
+            <option value="gold">Sunset Gold (#ffca62)</option>
+            <option value="red">Crimson Red (#ff5c72)</option>
+            <option value="white">Clean Studio White</option>
+          </select>
+          <div class="field-desc">Glow divider and border accents</div>
+        </div>
+
+        <!-- 7. Streamer Handle / Watermark -->
+        <div class="field">
+          <label>7. Streamer Tag / Handle</label>
+          <input id="streamer_tag" type="text" placeholder="e.g. @streamer_name" />
+          <div class="field-desc">Optional handle overlay badge</div>
+        </div>
+
+        <!-- 8. Cam Shape -->
+        <div class="field">
+          <label>8. Facecam Border Shape</label>
+          <select id="streamer_cam_shape">
+            <option value="rect">Clean Full-Width Rect</option>
+            <option value="rounded">Rounded Card</option>
+          </select>
+          <div class="field-desc">Edge curvature</div>
+        </div>
+
+        <!-- 9. Background Fill -->
+        <div class="field">
+          <label>9. Background Style</label>
+          <select id="streamer_bg">
+            <option value="blur">Motion Blur Backdrop</option>
+            <option value="dark">Dark Tint Ambient</option>
+            <option value="black">Deep Solid Black</option>
+          </select>
+          <div class="field-desc">For letterboxed & blur frames</div>
+        </div>
+
+        <!-- 10. Hook & Extras -->
+        <div class="field">
+          <label>10. Custom Hook Title</label>
+          <input id="hook" type="text" placeholder="Leave empty for AI auto-hook" />
+          <div class="field-desc">Top-of-screen hook headline</div>
+        </div>
       </div>
-      <label class="check"><input id="censor" type="checkbox" /> Mask + mute profanity</label>
+
+      <label class="check">
+        <input id="censor" type="checkbox" /> Mask and mute profanity words automatically
+      </label>
     </details>
 
+    <!-- Progress & Status -->
     <div id="progressWrap" class="progress-wrap">
       <div class="bar"><div id="barFill"></div></div>
       <div class="status"><span id="statusText">Starting…</span><span id="pctText">0%</span></div>
@@ -206,6 +460,7 @@
     </div>
   </div>
 
+  <!-- Clips Results -->
   <section id="resultsSection" class="hidden">
     <div class="section-head">
       <h2 id="resultsTitle">Clips</h2>
@@ -214,13 +469,24 @@
     <div id="clips" class="clips"></div>
   </section>
 
-  <section>
-    <div class="section-head">
-      <h2>Recent jobs</h2>
-      <div class="hint">Stored in <code>data/jobs</code></div>
+  <!-- Recent Jobs Collapsible Wrapper -->
+  <details id="jobsWrapper" open class="collapsible-card">
+    <summary class="collapsible-head">
+      <div class="collapsible-title">
+        <span class="chevron">▼</span>
+        <h2>Recent Jobs</h2>
+        <span id="jobsBadge" class="badge">0</span>
+      </div>
+      <div>
+        <button id="clearAllJobs" class="btn-sm danger" type="button" title="Delete all completed and failed jobs">
+          Delete All Jobs
+        </button>
+      </div>
+    </summary>
+    <div class="collapsible-content">
+      <div id="jobs" class="jobs"><div class="empty">No recent jobs found.</div></div>
     </div>
-    <div id="jobs" class="jobs"><div class="empty">Nothing yet.</div></div>
-  </section>
+  </details>
 </main>
 
 <script>
@@ -240,7 +506,10 @@ async function api(path, opts = {}) {
   const res = await fetch(path, opts);
   if (!res.ok) {
     let detail = res.statusText;
-    try { const body = await res.json(); detail = body.detail || JSON.stringify(body); } catch (e) {}
+    try {
+      const body = await res.json();
+      detail = body.detail || JSON.stringify(body);
+    } catch (e) {}
     throw new Error(detail);
   }
   return res.json();
@@ -253,6 +522,12 @@ function showError(message) {
   $("progressWrap").style.display = "block";
 }
 
+function clearError() {
+  const el = $("error");
+  el.textContent = "";
+  el.classList.add("hidden");
+}
+
 function setProgress(pct, message, status) {
   $("progressWrap").style.display = "block";
   $("barFill").style.width = `${Math.max(0, Math.min(100, pct))}%`;
@@ -260,24 +535,47 @@ function setProgress(pct, message, status) {
   $("statusText").textContent = message || status || "";
 }
 
+function updateButtons() {
+  const urlVal = ($("url").value || "").trim();
+  $("go").disabled = !urlVal || activeJob !== null;
+  $("goFile").disabled = !selectedFile || activeJob !== null;
+}
+
 function options() {
+  const minVal = Number($("min").value) || 20;
+  const maxVal = Number($("max").value) || 60;
   return {
-    num_clips: Number($("num").value) || null,
-    min_sec: Number($("min").value) || null,
-    max_sec: Number($("max").value) || null,
+    num_clips: Number($("num").value) || 5,
+    min_sec: minVal,
+    max_sec: maxVal > minVal ? maxVal : minVal + 10,
     layout: $("layout").value,
+    stabilization: $("stabilization").value,
+    streamer_game_focus: $("streamer_game_focus").value,
+    streamer_split_ratio: $("streamer_split_ratio").value,
+    streamer_cam_pos: $("streamer_cam_pos").value,
+    streamer_cam_zoom: Number($("streamer_cam_zoom").value) || 1.15,
+    streamer_divider: $("streamer_divider").value,
+    streamer_theme: $("streamer_theme").value,
+    streamer_tag: ($("streamer_tag").value || "").trim(),
+    streamer_cam_shape: $("streamer_cam_shape").value,
+    streamer_bg: $("streamer_bg").value,
     caption_style: $("style").value,
-    hook: $("hook").value.trim() || null,
+    hook: ($("hook").value || "").trim() || null,
     censor: $("censor").checked,
   };
 }
 
 async function startUrl() {
-  const url = $("url").value.trim();
-  if (!url) return showError("Paste a YouTube URL first.");
-  $("go").disabled = true;
-  $("error").classList.add("hidden");
-  setProgress(0, "Queued…");
+  const url = ($("url").value || "").trim();
+  if (!url) {
+    showError("Please enter a valid YouTube URL first.");
+    return;
+  }
+  clearError();
+  activeJob = "starting";
+  updateButtons();
+  setProgress(0, "Submitting job…");
+
   try {
     const job = await api("/api/jobs", {
       method: "POST",
@@ -286,59 +584,74 @@ async function startUrl() {
     });
     watch(job.id);
   } catch (err) {
-    $("go").disabled = false;
+    activeJob = null;
+    updateButtons();
     showError(err.message);
   }
 }
 
 async function startFile() {
-  if (!selectedFile) return;
-  $("goFile").disabled = true;
-  $("error").classList.add("hidden");
-  setProgress(0, "Uploading…");
+  if (!selectedFile) {
+    showError("Please select a video file first.");
+    return;
+  }
+  clearError();
+  activeJob = "starting";
+  updateButtons();
+  setProgress(0, "Uploading video…");
+
   const form = new FormData();
   form.append("file", selectedFile);
   const opts = options();
   Object.entries(opts).forEach(([key, value]) => {
     if (value !== null && value !== undefined) form.append(key, value);
   });
+
   try {
     const job = await api("/api/jobs/upload", { method: "POST", body: form });
     watch(job.id);
   } catch (err) {
-    $("goFile").disabled = false;
+    activeJob = null;
+    updateButtons();
     showError(err.message);
   }
 }
 
 function watch(jobId) {
   activeJob = jobId;
+  updateButtons();
   if (timer) clearInterval(timer);
+
   const tick = async () => {
     let job;
     try {
       job = await api(`/api/jobs/${jobId}`);
     } catch (err) {
       clearInterval(timer);
+      activeJob = null;
+      updateButtons();
       return showError(err.message);
     }
+
     setProgress(job.progress || 0, job.message, job.status);
+
     if (job.status === "done") {
       clearInterval(timer);
       timer = null;
-      $("go").disabled = false;
-      $("goFile").disabled = false;
+      activeJob = null;
+      updateButtons();
       renderClips(job);
       loadJobs();
     } else if (job.status === "error") {
       clearInterval(timer);
       timer = null;
-      $("go").disabled = false;
-      $("goFile").disabled = false;
-      showError(job.error || "Something went wrong.");
+      activeJob = null;
+      updateButtons();
+      showError(job.error || "Processing failed.");
       loadJobs();
     }
   };
+
   tick();
   timer = setInterval(tick, 1500);
 }
@@ -346,7 +659,7 @@ function watch(jobId) {
 function renderClips(job) {
   const clips = job.clips || [];
   $("resultsSection").classList.remove("hidden");
-  $("resultsTitle").textContent = `${clips.length} clips`;
+  $("resultsTitle").textContent = `${clips.length} Vertical Clips`;
   $("resultsHint").textContent = [
     job.source?.title ? job.source.title.slice(0, 70) : "",
     job.source?.duration ? fmtDur(job.source.duration) : "",
@@ -362,12 +675,12 @@ function renderClips(job) {
         <div class="meta">
           <div class="title">${escapeHtml(clip.title || "Clip")}</div>
           <div class="tags">
-            <span class="tag score">${clip.score ?? ""}</span>
+            <span class="tag score">Score ${clip.score ?? "—"}</span>
             <span class="tag">${Math.round(clip.duration)}s</span>
-            <span class="tag">${escapeHtml(clip.reframe?.mode || "")}</span>
+            <span class="tag">${escapeHtml(clip.reframe?.mode || "vertical")}</span>
           </div>
           <div class="actions">
-            <a href="${base}${clip.video}" download>MP4</a>
+            <a href="${base}${clip.video}" download>Download MP4</a>
             <a href="${base}${clip.srt}" download>SRT</a>
           </div>
         </div>
@@ -377,43 +690,82 @@ function renderClips(job) {
 }
 
 function escapeHtml(text) {
-  return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  return String(text).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
 }
 
 async function loadJobs() {
   let jobs = [];
   try { jobs = await api("/api/jobs"); } catch (e) { return; }
   const el = $("jobs");
+  $("jobsBadge").textContent = jobs.length;
+
   if (!jobs.length) {
-    el.innerHTML = '<div class="empty">Nothing yet.</div>';
+    el.innerHTML = '<div class="empty">No recent jobs found.</div>';
     return;
   }
+
   el.innerHTML = jobs.map((job) => `
     <div class="job" data-id="${job.id}">
       <span class="name">${escapeHtml(job.title || job.id)}</span>
-      <span class="state ${job.status}">${job.status}${job.status === "done" ? ` · ${job.clips} clips` : job.status === "running" ? ` · ${Math.round(job.progress || 0)}%` : ""}</span>
-      <span class="del" data-del="${job.id}" title="Delete">✕</span>
+      <span class="state ${job.status}">
+        ${job.status}${job.status === "done" ? ` · ${job.clips} clips` : job.status === "running" ? ` · ${Math.round(job.progress || 0)}%` : ""}
+      </span>
+      <span class="del" data-del="${job.id}" title="Delete this job">✕</span>
     </div>`).join("");
 
   el.querySelectorAll(".job").forEach((row) => {
     row.addEventListener("click", async (event) => {
       if (event.target.dataset.del) return;
-      const job = await api(`/api/jobs/${row.dataset.id}`);
-      setProgress(job.progress || 0, job.message, job.status);
-      if (job.status === "done") renderClips(job);
-      else if (job.status !== "error") watch(job.id);
-      else showError(job.error || "Failed");
+      try {
+        const job = await api(`/api/jobs/${row.dataset.id}`);
+        setProgress(job.progress || 0, job.message, job.status);
+        if (job.status === "done") renderClips(job);
+        else if (job.status !== "error") watch(job.id);
+        else showError(job.error || "Job failed");
+      } catch (err) {
+        showError(err.message);
+      }
     });
   });
+
   el.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      if (!confirm("Delete this job and its files?")) return;
-      await api(`/api/jobs/${btn.dataset.del}`, { method: "DELETE" });
-      loadJobs();
+      const id = btn.dataset.del;
+      if (!confirm(`Delete job ${id} and all its output files?`)) return;
+      try {
+        await api(`/api/jobs/${id}`, { method: "DELETE" });
+        loadJobs();
+      } catch (err) {
+        showError(err.message);
+      }
     });
   });
 }
+
+// Delete all jobs handler
+$("clearAllJobs").addEventListener("click", async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const badgeCount = $("jobsBadge").textContent;
+  if (badgeCount === "0") {
+    alert("There are no recent jobs to delete.");
+    return;
+  }
+  if (!confirm(`Are you sure you want to delete ALL ${badgeCount} jobs and their video files? This action cannot be undone.`)) {
+    return;
+  }
+  try {
+    const res = await api("/api/jobs", { method: "DELETE" });
+    $("jobsSection")?.classList.add("hidden");
+    $("resultsSection").classList.add("hidden");
+    loadJobs();
+  } catch (err) {
+    showError("Failed to delete all jobs: " + err.message);
+  }
+});
 
 function setTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
@@ -422,27 +774,43 @@ function setTab(name) {
 }
 
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => setTab(tab.dataset.tab)));
-$("go").addEventListener("click", startUrl);
-$("url").addEventListener("keydown", (e) => { if (e.key === "Enter") startUrl(); });
-$("goFile").addEventListener("click", startFile);
 
+// Input event listeners for live button enable/disable
+$("url").addEventListener("input", updateButtons);
+$("url").addEventListener("paste", () => setTimeout(updateButtons, 20));
+$("url").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !$("go").disabled) startUrl();
+});
+$("go").addEventListener("click", startUrl);
+
+$("goFile").addEventListener("click", startFile);
 $("drop").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", (e) => {
   selectedFile = e.target.files[0] || null;
-  $("fileName").textContent = selectedFile ? `${selectedFile.name} (${(selectedFile.size / 1048576).toFixed(0)} MB)` : "No file selected";
-  $("goFile").disabled = !selectedFile;
+  $("fileName").textContent = selectedFile
+    ? `${selectedFile.name} (${(selectedFile.size / 1048576).toFixed(1)} MB)`
+    : "No file selected";
+  updateButtons();
 });
-["dragenter", "dragover"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
-["dragleave", "drop"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
+
+["dragenter", "dragover"].forEach((ev) => $("drop").addEventListener(ev, (e) => {
+  e.preventDefault();
+  $("drop").classList.add("over");
+}));
+["dragleave", "drop"].forEach((ev) => $("drop").addEventListener(ev, (e) => {
+  e.preventDefault();
+  $("drop").classList.remove("over");
+}));
 $("drop").addEventListener("drop", (e) => {
   const file = e.dataTransfer.files[0];
   if (!file) return;
   selectedFile = file;
-  $("fileName").textContent = `${file.name} (${(file.size / 1048576).toFixed(0)} MB)`;
-  $("goFile").disabled = false;
+  $("fileName").textContent = `${file.name} (${(file.size / 1048576).toFixed(1)} MB)`;
+  updateButtons();
 });
 
 (async function init() {
+  updateButtons();
   loadJobs();
   try {
     config = await api("/api/config");
@@ -455,17 +823,18 @@ $("drop").addEventListener("drop", (e) => {
       pill.textContent = `AI ranking: ${llm.provider}`;
       pill.className = "pill ok";
     } else {
-      pill.textContent = "Heuristic ranking (add an API key for better picks)";
+      pill.textContent = "Heuristic ranking (add an API key for LLM)";
       pill.className = "pill warn";
     }
     if (config.defaults) {
-      $("num").value = config.defaults.num_clips;
-      $("min").value = config.defaults.min_sec;
-      $("max").value = config.defaults.max_sec;
-      $("layout").value = config.defaults.layout;
-      $("style").value = config.defaults.caption_style;
+      $("num").value = config.defaults.num_clips || 5;
+      $("min").value = config.defaults.min_sec || 20;
+      $("max").value = config.defaults.max_sec || 60;
+      if (config.defaults.layout) $("layout").value = config.defaults.layout;
+      if (config.defaults.caption_style) $("style").value = config.defaults.caption_style;
+      if (config.defaults.stabilization) $("stabilization").value = config.defaults.stabilization;
     }
-  } catch (e) { /* server not ready */ }
+  } catch (e) { /* server starting */ }
 })();
 </script>
 </body>
