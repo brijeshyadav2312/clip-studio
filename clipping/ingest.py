@@ -44,11 +44,8 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
             progress(99.0, "Download finished, merging streams")
 
     opts: dict = {
-        "format": (
-            "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/"
-            "b[height<=1080][ext=mp4]/"
-            "bv*[height<=1080]+ba/b[height<=1080]/b"
-        ),
+        "format": "bv*+ba/b/best",
+        "format_sort": ["res:1080", "ext:mp4:m4a"],
         "outtmpl": template,
         "merge_output_format": "mp4",
         "noplaylist": True,
@@ -100,14 +97,42 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
                 }
     except Exception as exc:
         raw_msg = strip_ansi(str(exc))
-        if "confirm you're not a bot" in raw_msg.lower() or "sign in to confirm" in raw_msg.lower():
+        if "requested format is not available" in raw_msg.lower():
+            log(f"[ingest] strict format unavailable, falling back to any available format: {raw_msg}")
+            fallback_opts = dict(opts)
+            fallback_opts["format"] = "b/bv*+ba/best"
+            fallback_opts.pop("format_sort", None)
+            try:
+                with YoutubeDL(fallback_opts) as fallback_ydl:
+                    data = fallback_ydl.extract_info(url, download=True)
+                    if isinstance(data, dict):
+                        if data.get("entries"):
+                            data = data["entries"][0]
+                        meta = {
+                            "title": data.get("title") or "",
+                            "uploader": data.get("uploader") or "",
+                            "webpage_url": data.get("webpage_url") or url,
+                            "duration": data.get("duration"),
+                        }
+            except Exception as fallback_exc:
+                raw_fallback = strip_ansi(str(fallback_exc))
+                if "confirm you're not a bot" in raw_fallback.lower() or "sign in to confirm" in raw_fallback.lower():
+                    raise ToolError(
+                        "YouTube Bot Protection: YouTube requires bot verification for this URL.\n\n"
+                        "To continue:\n"
+                        "1. Switch to the 'Upload file' tab above to clip your video file directly without restrictions.\n"
+                        "2. Or export your YouTube cookies as 'cookies.txt' and upload them in Customization Options."
+                    ) from fallback_exc
+                raise ToolError(f"Download failed: {raw_fallback}") from fallback_exc
+        elif "confirm you're not a bot" in raw_msg.lower() or "sign in to confirm" in raw_msg.lower():
             raise ToolError(
                 "YouTube Bot Protection: YouTube requires bot verification for this URL.\n\n"
                 "To continue:\n"
                 "1. Switch to the 'Upload file' tab above to clip your video file directly without restrictions.\n"
                 "2. Or export your YouTube cookies as 'cookies.txt' and upload them in Customization Options."
             ) from exc
-        raise ToolError(f"Download failed: {raw_msg}") from exc
+        else:
+            raise ToolError(f"Download failed: {raw_msg}") from exc
 
     if meta:
         (dest_dir / "source.json").write_text(
