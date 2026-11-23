@@ -1,14 +1,29 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Link2, FileVideo, X, ChevronDown, Sparkles, Sliders, Shield, Cookie, Check } from 'lucide-react';
-
-const SUPPORTED_PLATFORMS = ['YouTube', 'Twitch', 'Kick', 'TikTok', 'X / Twitter', 'Vimeo', 'Facebook', 'Direct MP4'];
+import {
+  Upload,
+  Link2,
+  FileVideo,
+  X,
+  ChevronDown,
+  Sparkles,
+  Sliders,
+  Shield,
+  Cookie,
+  Check,
+  Smartphone,
+  Square,
+  Tv,
+  Youtube,
+  Instagram,
+} from 'lucide-react';
 
 export default function MediaInput({ onProcess, isProcessing, onUploadCookies, cookieStatus }) {
-  const [mode, setMode] = useState('url'); // 'url' | 'file'
+  const [mode, setMode] = useState('upload'); // 'upload' | 'url'
   const [url, setUrl] = useState('');
   const [file, setFile] = useState(null);
   const [aspect, setAspect] = useState('9:16');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [rightsConfirmed, setRightsConfirmed] = useState(true);
 
   // Advanced Options State
   const [numClips, setNumClips] = useState(5);
@@ -33,26 +48,20 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
   const [censor, setCensor] = useState(false);
   const [hook, setHook] = useState('');
 
-  const cookieFileRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const handleDrop = (e) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       setFile(e.dataTransfer.files[0]);
-      setMode('file');
-    }
-  };
-
-  const handleCookieSelect = (e) => {
-    const f = e.target.files?.[0];
-    if (f && onUploadCookies) {
-      onUploadCookies(f);
+      setMode('upload');
     }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (isProcessing) return;
+    if (!rightsConfirmed) return;
 
     const options = {
       num_clips: Number(numClips) || 5,
@@ -79,414 +88,391 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
       hook: hook.trim() || null,
     };
 
-    if (mode === 'file' && file) {
+    if (mode === 'upload' && file) {
       onProcess({ type: 'file', payload: file, options });
     } else if (mode === 'url' && url.trim()) {
       onProcess({ type: 'url', payload: url.trim(), options });
     }
   };
 
-  const canSubmit = mode === 'file' ? !!file : !!url.trim();
+  const canSubmit = (mode === 'upload' ? !!file : !!url.trim()) && rightsConfirmed;
 
   return (
-    <div className="card p-5 sm:p-7 shadow-2xl relative overflow-hidden">
-      {/* Tab Switcher */}
-      <div className="flex gap-6 mb-6 border-b border-rule">
-        <button
-          type="button"
-          onClick={() => setMode('url')}
-          className={`flex items-center gap-2 pb-3 px-1 -mb-px border-b-2 text-sm font-medium transition-colors ${
-            mode === 'url' ? 'text-ink border-brass' : 'text-muted border-transparent hover:text-ink2'
-          }`}
-        >
-          <Link2 size={16} className={mode === 'url' ? 'text-brass' : ''} />
-          Video URL
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode('file')}
-          className={`flex items-center gap-2 pb-3 px-1 -mb-px border-b-2 text-sm font-medium transition-colors ${
-            mode === 'file' ? 'text-ink border-brass' : 'text-muted border-transparent hover:text-ink2'
-          }`}
-        >
-          <Upload size={16} className={mode === 'file' ? 'text-brass' : ''} />
-          Upload File
-        </button>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Input Field Area */}
-        {mode === 'url' ? (
-          <div>
-            <div className="relative">
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://youtu.be/... paste YouTube, Twitch, or video link"
-                className="input-field pr-12 text-base"
-                required={mode === 'url'}
-              />
-              {url && (
-                <button
-                  type="button"
-                  onClick={() => setUrl('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
-                >
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-            {/* Platforms row */}
-            <div className="flex flex-wrap items-center gap-1.5 mt-3">
-              <span className="eyebrow mr-1">Supported:</span>
-              {SUPPORTED_PLATFORMS.map((p) => (
-                <span key={p} className="text-xs px-2 py-0.5 rounded-full bg-paper3 text-muted border border-rule">
-                  {p}
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div
-            className={`border-2 border-dashed rounded-card p-8 text-center transition-colors cursor-pointer ${
-              file ? 'border-brass bg-paper' : 'border-rule2 hover:border-brass hover:bg-paper'
-            }`}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={handleDrop}
-            onClick={() => document.getElementById('videoFileInput')?.click()}
-          >
-            <input
-              id="videoFileInput"
-              type="file"
-              accept="video/*"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="hidden"
-            />
-            {file ? (
-              <div className="flex items-center justify-center gap-3 text-ok">
-                <FileVideo size={22} className="shrink-0 text-brass" />
-                <span className="font-medium text-ink truncate max-w-sm">{file.name}</span>
-                <span className="readout text-muted">({(file.size / 1024 / 1024).toFixed(1)} MB)</span>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setFile(null); }}
-                  className="p-1 text-muted hover:text-danger rounded-full"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            ) : (
-              <div>
-                <Upload className="mx-auto mb-3 text-brass" size={24} />
-                <p className="text-ink font-medium">Click to select video or drag and drop</p>
-                <p className="readout text-muted mt-1">MP4, MOV, WEBM, MKV · Unlimited file size</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Output Aspect Ratio Visual Cards */}
-        <div>
-          <label className="eyebrow block mb-2">Output Format & Aspect Ratio</label>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { value: '9:16', label: '9:16', name: 'Vertical Short', hint: 'Shorts · Reels · TikTok', w: 18, h: 32 },
-              { value: '1:1', label: '1:1', name: 'Square Post', hint: 'Feed Posts · Instagram', w: 26, h: 26 },
-              { value: '16:9', label: '16:9', name: 'Horizontal', hint: 'Keep Landscape Original', w: 34, h: 20 },
-            ].map((f) => {
-              const active = aspect === f.value;
-              return (
-                <button
-                  key={f.value}
-                  type="button"
-                  onClick={() => setAspect(f.value)}
-                  className={`p-3.5 rounded-input border flex flex-col items-center gap-2 transition-all ${
-                    active ? 'border-brass bg-brass/10 text-ink shadow-lg shadow-brass/10' : 'border-rule text-muted hover:border-rule2 bg-paper'
-                  }`}
-                >
-                  <span
-                    className="rounded-[3px] border-2 transition-colors"
-                    style={{
-                      width: `${f.w}px`,
-                      height: `${f.h}px`,
-                      borderColor: active ? 'var(--color-accent)' : 'var(--color-rule-2)',
-                      backgroundColor: active ? 'color-mix(in srgb, var(--color-accent) 22%, transparent)' : 'transparent',
-                    }}
-                  />
-                  <div className="text-center">
-                    <span className="block font-mono text-xs font-semibold text-ink">{f.label}</span>
-                    <span className="block text-[11px] text-muted">{f.hint}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Advanced Options Accordion */}
-        <div className="border-t border-rule pt-4">
+    <div className="w-full max-w-2xl mx-auto py-6 px-4">
+      <div className="card p-6 sm:p-8 shadow-2xl relative border border-rule2 bg-[#0e1015]/95 backdrop-blur-xl">
+        {/* Top Tabs (Matching Image 1: ↑ upload file | 🔗 video url) */}
+        <div className="flex gap-8 mb-6 border-b border-rule">
           <button
             type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center justify-between w-full py-2 text-xs font-mono uppercase tracking-wider text-muted hover:text-ink transition-colors"
+            onClick={() => setMode('upload')}
+            className={`flex items-center gap-2 pb-3 px-1 -mb-px border-b-2 text-xs font-semibold lowercase tracking-wide transition-colors ${
+              mode === 'upload'
+                ? 'text-ink border-brass'
+                : 'text-muted border-transparent hover:text-ink2'
+            }`}
           >
-            <span className="flex items-center gap-2 text-ink font-semibold">
-              <Sliders size={14} className="text-brass" />
-              Studio Customization Options (Subtitles, Layouts, 10 Streamer Controls)
-            </span>
-            <ChevronDown size={16} className={`transition-transform duration-200 ${showAdvanced ? 'rotate-180' : ''}`} />
+            <Upload size={14} className={mode === 'upload' ? 'text-brass' : 'text-muted'} />
+            <span>upload file</span>
           </button>
 
-          {showAdvanced && (
-            <div className="mt-4 pt-4 border-t border-rule space-y-5 text-sm animate-fade">
-              {/* Clips Length & Count */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="eyebrow block mb-1">Clips Count</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="15"
-                    value={numClips}
-                    onChange={(e) => setNumClips(e.target.value)}
-                    className="input-field"
-                  />
-                </div>
-                <div>
-                  <label className="eyebrow block mb-1">Min Length (Sec)</label>
-                  <input
-                    type="number"
-                    min="8"
-                    max="120"
-                    value={minSec}
-                    onChange={(e) => setMinSec(e.target.value)}
-                    className="input-field"
-                  />
-                </div>
-                <div>
-                  <label className="eyebrow block mb-1">Max Length (Sec)</label>
-                  <input
-                    type="number"
-                    min="15"
-                    max="180"
-                    value={maxSec}
-                    onChange={(e) => setMaxSec(e.target.value)}
-                    className="input-field"
-                  />
-                </div>
+          <button
+            type="button"
+            onClick={() => setMode('url')}
+            className={`flex items-center gap-2 pb-3 px-1 -mb-px border-b-2 text-xs font-semibold lowercase tracking-wide transition-colors ${
+              mode === 'url'
+                ? 'text-ink border-brass'
+                : 'text-muted border-transparent hover:text-ink2'
+            }`}
+          >
+            <Link2 size={14} className={mode === 'url' ? 'text-brass' : 'text-muted'} />
+            <span>video url</span>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Main Input Area */}
+          {mode === 'upload' ? (
+            <div>
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-card p-10 flex flex-col items-center justify-center cursor-pointer transition-all ${
+                  file
+                    ? 'border-brass/60 bg-brass/5'
+                    : 'border-rule hover:border-brass/50 hover:bg-paper2/50'
+                }`}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/*,.mp4,.mov,.mkv,.webm"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      setFile(e.target.files[0]);
+                    }
+                  }}
+                />
+
+                {file ? (
+                  <div className="flex flex-col items-center text-center gap-2">
+                    <div className="w-12 h-12 rounded-full bg-brass/20 flex items-center justify-center text-brass">
+                      <FileVideo size={24} />
+                    </div>
+                    <div className="font-medium text-ink text-sm max-w-sm truncate">{file.name}</div>
+                    <div className="readout text-muted text-xs">
+                      {(file.size / (1024 * 1024)).toFixed(1)} MB · Ready to process
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFile(null);
+                      }}
+                      className="mt-2 text-xs text-brass hover:underline flex items-center gap-1"
+                    >
+                      <X size={12} /> Choose another file
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center text-center gap-2.5">
+                    <div className="w-9 h-9 rounded-input border border-rule flex items-center justify-center text-muted mb-1 bg-paper2">
+                      <Upload size={16} />
+                    </div>
+                    <p className="text-ink text-sm font-normal">click to upload or drag and drop</p>
+                    <p className="readout text-[10.5px] text-muted tracking-wider uppercase">
+                      MP4, MOV UP TO 500MB · AT LEAST 45S LONG
+                    </p>
+                  </div>
+                )}
               </div>
-
-              {/* Subtitles & Whisper Model */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="eyebrow block mb-1">Subtitle Script / Hinglish</label>
-                  <select
-                    value={subtitleScript}
-                    onChange={(e) => setSubtitleScript(e.target.value)}
-                    className="input-field"
-                  >
-                    <option value="auto">Auto (Hinglish for Hindi/Urdu, English for English)</option>
-                    <option value="hinglish">Hinglish (Hindi in English Latin script)</option>
-                    <option value="en_translate">Translate to English</option>
-                    <option value="hi">Hindi (Devanagari script)</option>
-                    <option value="original">Original Spoken</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="eyebrow block mb-1">Caption Visual Style</label>
-                  <select
-                    value={captionStyle}
-                    onChange={(e) => setCaptionStyle(e.target.value)}
-                    className="input-field"
-                  >
-                    <option value="wordpop">WordPop (Yellow active word punch)</option>
-                    <option value="glow">Neon Glow Subtitle</option>
-                    <option value="karaoke">Karaoke Gradient</option>
-                    <option value="clean">Clean Minimalist</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="eyebrow block mb-1">Whisper Model Engine</label>
-                  <select
-                    value={whisperModel}
-                    onChange={(e) => setWhisperModel(e.target.value)}
-                    className="input-field"
-                  >
-                    <option value="base">Base (Fastest ~15s, 74M)</option>
-                    <option value="small">Small (Balanced accuracy, 244M)</option>
-                    <option value="medium">Medium (Top accuracy for accents, 769M)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Layout Mode & Stabilization */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="eyebrow block mb-1">Reframing Layout Preset</label>
-                  <select
-                    value={layout}
-                    onChange={(e) => setLayout(e.target.value)}
-                    className="input-field"
-                  >
-                    <option value="auto">Auto (Smart Dynamic: Face-crop + Landscape for Charts/Slides)</option>
-                    <option value="dynamic_landscape">Dynamic Landscape (Full Landscape on Charts/Slides)</option>
-                    <option value="fit_blur">Smart Fit + Ambient Blur (100% Full Landscape)</option>
-                    <option value="crop">Speaker Crop (Vertical Face Track)</option>
-                    <option value="streamer_split">Streamer Split (Webcam Top + Gameplay Bottom)</option>
-                    <option value="gameplay_center">Gameplay Center Action (Vehicle / Crosshair / GTA 6)</option>
-                    <option value="gameplay_blur">Gameplay Full Frame + Blurred Backdrop</option>
-                    <option value="streamer_pip">Streamer Picture-in-Picture</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="eyebrow block mb-1">Camera Motion & Stability</label>
-                  <select
-                    value={stabilization}
-                    onChange={(e) => setStabilization(e.target.value)}
-                    className="input-field"
-                  >
-                    <option value="locked_tripod">Tripod Lock (Zero Shivering - Rock solid)</option>
-                    <option value="smooth_cinematic">Smooth Cinematic Pan</option>
-                    <option value="dynamic">Dynamic Tracking</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* 10 Streamer & Gaming Controls */}
-              <div className="border border-rule rounded-input p-4 bg-paper space-y-3">
-                <span className="eyebrow text-brass block">10 Streamer & Gaming Customization Controls</span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-xs text-muted block mb-1">1. Gameplay Action Focus</label>
-                    <select value={streamerGameFocus} onChange={(e) => setStreamerGameFocus(e.target.value)} className="input-field text-xs">
-                      <option value="center">Center (GTA 6 Vehicle / Crosshair)</option>
-                      <option value="center_low">Center Low (Third-Person Car)</option>
-                      <option value="center_high">Center High (FPS Crosshair)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted block mb-1">2. Split Ratio</label>
-                    <select value={streamerSplitRatio} onChange={(e) => setStreamerSplitRatio(e.target.value)} className="input-field text-xs">
-                      <option value="35_65">35% Face / 65% Game</option>
-                      <option value="30_70">30% Face / 70% Game</option>
-                      <option value="50_50">50% Equal Split</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted block mb-1">3. Facecam Position</label>
-                    <select value={streamerCamPos} onChange={(e) => setStreamerCamPos(e.target.value)} className="input-field text-xs">
-                      <option value="auto">Auto-Detect Webcam</option>
-                      <option value="top-left">Top-Left Corner</option>
-                      <option value="top-right">Top-Right Corner</option>
-                      <option value="bottom-right">Bottom-Right Corner</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-xs text-muted block mb-1">4. Glow Divider Line</label>
-                    <select value={streamerDivider} onChange={(e) => setStreamerDivider(e.target.value)} className="input-field text-xs">
-                      <option value="glow">Neon Glow Line</option>
-                      <option value="subtle">Subtle 2px Border</option>
-                      <option value="none">Seamless (No Line)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted block mb-1">5. Theme Accent Color</label>
-                    <select value={streamerTheme} onChange={(e) => setStreamerTheme(e.target.value)} className="input-field text-xs">
-                      <option value="purple_cyan">Cyber Purple (#7c5cff)</option>
-                      <option value="cyan">Neon Mint (#21d4a0)</option>
-                      <option value="gold">Sunset Gold (#ffca62)</option>
-                      <option value="red">Crimson Red (#ff5c72)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted block mb-1">6. Streamer Handle Watermark</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. @your_channel"
-                      value={streamerTag}
-                      onChange={(e) => setStreamerTag(e.target.value)}
-                      className="input-field text-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* YouTube Cookies & Authentication */}
-              <div className="border border-rule rounded-input p-4 bg-paper flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <Cookie size={20} className="text-brass shrink-0" />
-                  <div>
-                    <p className="text-xs font-semibold text-ink">YouTube Bot Verification & Cookies</p>
-                    <p className="text-[11px] text-muted">Bypass YouTube sign-in challenges by passing your exported session cookies.</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={cookieFileRef}
-                    type="file"
-                    accept=".txt"
-                    onChange={handleCookieSelect}
-                    className="hidden"
-                  />
+            </div>
+          ) : (
+            <div>
+              <div className="relative">
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="Paste YouTube, Twitch, Kick, or direct video URL…"
+                  className="w-full bg-paper2 border border-rule focus:border-brass rounded-input py-3.5 pl-4 pr-10 text-sm text-ink placeholder:text-muted/60 focus:outline-none transition-colors"
+                />
+                {url && (
                   <button
                     type="button"
-                    onClick={() => cookieFileRef.current?.click()}
-                    className="btn-ghost text-xs py-1.5 px-3 flex items-center gap-1.5"
+                    onClick={() => setUrl('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink p-1"
                   >
-                    <Upload size={13} />
-                    Upload cookies.txt
+                    <X size={14} />
                   </button>
-                  {cookieStatus?.has_cookies && (
-                    <span className="pill pill-ok text-xs">Active</span>
-                  )}
-                </div>
+                )}
               </div>
-
-              {/* Profanity and Custom Hook */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                <div>
-                  <label className="eyebrow block mb-1">Custom Top-of-Screen Hook Headline</label>
-                  <input
-                    type="text"
-                    placeholder="Leave empty for AI auto-generated hook"
-                    value={hook}
-                    onChange={(e) => setHook(e.target.value)}
-                    className="input-field"
-                  />
-                </div>
-                <div className="flex items-center gap-2 pt-4">
-                  <input
-                    type="checkbox"
-                    id="censorCheck"
-                    checked={censor}
-                    onChange={(e) => setCensor(e.target.checked)}
-                    className="w-4 h-4 accent-brass"
-                  />
-                  <label htmlFor="censorCheck" className="text-xs text-ink cursor-pointer">
-                    Mute and mask profanity words automatically
-                  </label>
-                </div>
+              <div className="flex items-center justify-between mt-2 px-1">
+                <span className="text-[11px] text-muted">Supports YouTube, Twitch, Kick, Vimeo, TikTok, etc.</span>
+                {navigator.clipboard && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText();
+                        if (text) setUrl(text);
+                      } catch (err) {
+                        // ignore
+                      }
+                    }}
+                    className="text-[11px] text-brass hover:underline"
+                  >
+                    paste from clipboard
+                  </button>
+                )}
               </div>
             </div>
           )}
-        </div>
 
-        {/* Submit Button */}
-        <div>
-          <button
-            type="submit"
-            disabled={!canSubmit || isProcessing}
-            className="btn-primary w-full flex items-center justify-center gap-2 text-base py-3.5 shadow-xl"
-          >
-            <Sparkles size={18} />
-            <span>{isProcessing ? 'Processing Clips…' : 'Make Clips'}</span>
-          </button>
+          {/* OUTPUT FORMAT Selection Cards (Matching Image 1: 9:16 | 1:1 | 16:9) */}
+          <div className="space-y-2.5 pt-1">
+            <label className="readout block text-center text-[10px] tracking-widest text-muted uppercase">
+              OUTPUT FORMAT
+            </label>
+
+            <div className="grid grid-cols-3 gap-3">
+              {/* 9:16 Card */}
+              <button
+                type="button"
+                onClick={() => setAspect('9:16')}
+                className={`flex flex-col items-center justify-center p-4 rounded-input border transition-all text-center ${
+                  aspect === '9:16'
+                    ? 'border-brass bg-brass/5 shadow-md shadow-brass/10'
+                    : 'border-rule bg-paper2/50 hover:border-rule2 hover:bg-paper2'
+                }`}
+              >
+                <div
+                  className={`w-5 h-8 border rounded-[3px] flex items-center justify-center mb-2.5 transition-colors ${
+                    aspect === '9:16' ? 'border-brass' : 'border-muted'
+                  }`}
+                >
+                  <div
+                    className={`w-1 h-1 rounded-full ${
+                      aspect === '9:16' ? 'bg-brass' : 'bg-muted'
+                    }`}
+                  />
+                </div>
+                <span
+                  className={`text-xs font-semibold block ${
+                    aspect === '9:16' ? 'text-brass' : 'text-ink'
+                  }`}
+                >
+                  9:16
+                </span>
+                <span className="text-[10px] text-muted block mt-0.5">Shorts · Reels · TikTok</span>
+              </button>
+
+              {/* 1:1 Card */}
+              <button
+                type="button"
+                onClick={() => setAspect('1:1')}
+                className={`flex flex-col items-center justify-center p-4 rounded-input border transition-all text-center ${
+                  aspect === '1:1'
+                    ? 'border-brass bg-brass/5 shadow-md shadow-brass/10'
+                    : 'border-rule bg-paper2/50 hover:border-rule2 hover:bg-paper2'
+                }`}
+              >
+                <div
+                  className={`w-7 h-7 border rounded-[3px] flex items-center justify-center mb-2.5 transition-colors ${
+                    aspect === '1:1' ? 'border-brass' : 'border-muted'
+                  }`}
+                />
+                <span
+                  className={`text-xs font-semibold block ${
+                    aspect === '1:1' ? 'text-brass' : 'text-ink'
+                  }`}
+                >
+                  1:1
+                </span>
+                <span className="text-[10px] text-muted block mt-0.5">Feed posts</span>
+              </button>
+
+              {/* 16:9 Card */}
+              <button
+                type="button"
+                onClick={() => setAspect('16:9')}
+                className={`flex flex-col items-center justify-center p-4 rounded-input border transition-all text-center ${
+                  aspect === '16:9'
+                    ? 'border-brass bg-brass/5 shadow-md shadow-brass/10'
+                    : 'border-rule bg-paper2/50 hover:border-rule2 hover:bg-paper2'
+                }`}
+              >
+                <div
+                  className={`w-8 h-5 border rounded-[3px] flex items-center justify-center mb-2.5 transition-colors ${
+                    aspect === '16:9' ? 'border-brass' : 'border-muted'
+                  }`}
+                />
+                <span
+                  className={`text-xs font-semibold block ${
+                    aspect === '16:9' ? 'text-brass' : 'text-ink'
+                  }`}
+                >
+                  16:9
+                </span>
+                <span className="text-[10px] text-muted block mt-0.5">Keep landscape · YouTube</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Advanced Options Accordion */}
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-1.5 text-xs text-muted hover:text-ink transition-colors font-mono"
+            >
+              <ChevronDown
+                size={14}
+                className={`transition-transform duration-200 ${showAdvanced ? 'rotate-180' : ''}`}
+              />
+              <span>advanced options</span>
+            </button>
+
+            {showAdvanced && (
+              <div className="mt-4 p-4 rounded-card border border-rule bg-paper2/60 space-y-4 animate-fade text-xs">
+                {/* Row 1: Subtitle script & style */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-muted block mb-1">Subtitle Language / Script</label>
+                    <select
+                      value={subtitleScript}
+                      onChange={(e) => setSubtitleScript(e.target.value)}
+                      className="w-full bg-paper border border-rule rounded-input p-2 text-ink focus:border-brass focus:outline-none"
+                    >
+                      <option value="auto">Auto (Detect Hindi/English)</option>
+                      <option value="hinglish">Hinglish (Roman Script - Best for mix)</option>
+                      <option value="english">English (Strict English)</option>
+                      <option value="hindi">Hindi (Devanagari)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-muted block mb-1">Caption Animation Style</label>
+                    <select
+                      value={captionStyle}
+                      onChange={(e) => setCaptionStyle(e.target.value)}
+                      className="w-full bg-paper border border-rule rounded-input p-2 text-ink focus:border-brass focus:outline-none"
+                    >
+                      <option value="wordpop">WordPop (Viral Highlight)</option>
+                      <option value="karaoke">Karaoke Gradient</option>
+                      <option value="minimal">Minimal Clean</option>
+                      <option value="none">No Subtitles</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Row 2: Camera framing & Clips count */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-muted block mb-1">Camera Stabilization</label>
+                    <select
+                      value={stabilization}
+                      onChange={(e) => setStabilization(e.target.value)}
+                      className="w-full bg-paper border border-rule rounded-input p-2 text-ink focus:border-brass focus:outline-none"
+                    >
+                      <option value="locked_tripod">Locked Tripod (Zero Jitter)</option>
+                      <option value="smooth_pan">Smooth Dynamic Pan</option>
+                      <option value="disabled">Center Crop</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-muted block mb-1">Number of Clips: {numClips}</label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={numClips}
+                      onChange={(e) => setNumClips(Number(e.target.value))}
+                      className="w-full accent-brass mt-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-muted block mb-1">Max Duration: {maxSec}s</label>
+                    <input
+                      type="range"
+                      min="15"
+                      max="90"
+                      step="5"
+                      value={maxSec}
+                      onChange={(e) => setMaxSec(Number(e.target.value))}
+                      className="w-full accent-brass mt-2"
+                    />
+                  </div>
+                </div>
+
+                {/* Row 3: Custom Hook / Prompt */}
+                <div>
+                  <label className="text-muted block mb-1">Custom Highlight Prompt / Hook (Optional)</label>
+                  <input
+                    type="text"
+                    value={hook}
+                    onChange={(e) => setHook(e.target.value)}
+                    placeholder="e.g. Focus on AI bubble discussion or high emotional moments…"
+                    className="w-full bg-paper border border-rule rounded-input p-2 text-ink focus:border-brass focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Rights Confirmation Checkbox (Matching Image 1) */}
+          <div className="flex items-start gap-2.5 pt-1">
+            <input
+              type="checkbox"
+              id="rightsCheck"
+              checked={rightsConfirmed}
+              onChange={(e) => setRightsConfirmed(e.target.checked)}
+              className="mt-0.5 rounded border-rule text-brass focus:ring-0 focus:outline-none accent-brass cursor-pointer"
+            />
+            <label htmlFor="rightsCheck" className="text-[11px] text-muted leading-relaxed cursor-pointer select-none">
+              I confirm I own this content or have the rights to process it. I am responsible for any content I submit.
+              See our <span className="text-ink underline hover:text-brass">Terms</span> and{' '}
+              <span className="text-ink underline hover:text-brass">Privacy Policy</span>.
+            </label>
+          </div>
+
+          {/* Terracotta / Burnt Copper Generate Clips Button (Matching Image 1) */}
+          <div>
+            <button
+              type="submit"
+              disabled={!canSubmit || isProcessing}
+              className={`w-full py-3.5 px-6 rounded-card font-medium text-xs tracking-wider transition-all duration-200 lowercase shadow-lg ${
+                canSubmit && !isProcessing
+                  ? 'bg-gradient-to-r from-[#ba6238] via-[#a8522a] to-[#8d421e] text-white hover:brightness-110 active:scale-[0.99] shadow-[#a8522a]/25 cursor-pointer font-semibold'
+                  : 'bg-paper3 text-muted border border-rule cursor-not-allowed opacity-60'
+              }`}
+            >
+              {isProcessing ? 'analyzing & generating clips…' : 'generate clips'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Platform Icons (Matching Image 1 Bottom: YouTube | Instagram | TikTok) */}
+      <div className="flex items-center justify-center gap-8 mt-6 text-muted text-xs">
+        <div className="flex items-center gap-1.5 hover:text-ink transition-colors cursor-default">
+          <Youtube size={15} />
+          <span>YouTube</span>
         </div>
-      </form>
+        <div className="flex items-center gap-1.5 hover:text-ink transition-colors cursor-default">
+          <Instagram size={14} />
+          <span>Instagram</span>
+        </div>
+        <div className="flex items-center gap-1.5 hover:text-ink transition-colors cursor-default">
+          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+            <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z" />
+          </svg>
+          <span>TikTok</span>
+        </div>
+      </div>
     </div>
   );
 }

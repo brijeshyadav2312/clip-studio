@@ -19,6 +19,23 @@ DATA_DIR = Path(os.getenv("CLIP_DATA_DIR", str(ROOT / "data"))).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def load_ai_config() -> dict:
+    p = DATA_DIR / "ai_config.json"
+    if p.exists():
+        try:
+            import json
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def save_ai_config(cfg: dict) -> None:
+    p = DATA_DIR / "ai_config.json"
+    import json
+    p.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+
 def _int(name: str, default: int) -> int:
     try:
         return int(os.getenv(name, str(default)))
@@ -86,14 +103,18 @@ class Settings:
     whisper_threads: int = _int("WHISPER_THREADS", max(1, (os.cpu_count() or 4) - 1))
 
     # Highlight ranking
-    llm_provider: str = os.getenv(
-        "LLM_PROVIDER",
-        "gemini" if os.getenv("GEMINI_API_KEY") else ("openai" if os.getenv("OPENAI_API_KEY") else "heuristic"),
-    )
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
-    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    llm_provider: str = field(default_factory=lambda: (
+        load_ai_config().get("provider") or os.getenv(
+            "LLM_PROVIDER",
+            "gemini" if (load_ai_config().get("gemini_api_key") or os.getenv("GEMINI_API_KEY")) else (
+                "openai" if (load_ai_config().get("openai_api_key") or os.getenv("OPENAI_API_KEY")) else "heuristic"
+            ),
+        )
+    ))
+    gemini_api_key: str = field(default_factory=lambda: load_ai_config().get("gemini_api_key") or os.getenv("GEMINI_API_KEY", ""))
+    gemini_model: str = field(default_factory=lambda: load_ai_config().get("gemini_model") or os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    openai_api_key: str = field(default_factory=lambda: load_ai_config().get("openai_api_key") or os.getenv("OPENAI_API_KEY", ""))
+    openai_model: str = field(default_factory=lambda: load_ai_config().get("openai_model") or os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     llm_timeout: int = _int("LLM_TIMEOUT", 120)
 

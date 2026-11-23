@@ -1,140 +1,110 @@
-import React, { useState, useRef } from 'react';
-import { Download, FileText, Share2, Check, Sparkles, Play, Pause } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, FileText, Trash2, Play, Pause, Volume2, VolumeX, Sparkles, Clock } from 'lucide-react';
 
-export default function ResultCard({ clip, index, jobId }) {
+export default function ResultCard({ clip, jobId, onDelete }) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const videoRef = useRef(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const videoUrl = clip?.video_url ? clip.video_url : `/media/${jobId}/${clip.filename}`;
-  const srtUrl = clip?.srt_url ? clip.srt_url : `/media/${jobId}/${clip.filename.replace(/\.[^.]+$/, '.srt')}`;
+  const videoUrl = clip.url || `/media/${jobId}/${clip.filename}`;
+  const srtUrl = clip.srt_url || `/media/${jobId}/${clip.filename.replace(/\.mp4$/i, '.srt')}`;
 
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (isPlaying) {
-      videoRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      videoRef.current.play();
-      setIsPlaying(true);
-    }
-  };
-
-  const copyTitle = () => {
-    if (clip.title) {
-      navigator.clipboard.writeText(clip.title);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleDownload = async () => {
+  const handleDelete = async (e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete "${clip.filename}"?`)) return;
+    setIsDeleting(true);
     try {
-      setDownloading(true);
-      const res = await fetch(videoUrl);
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = clip.filename || `clip-${index + 1}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e) {
-      window.open(videoUrl, '_blank');
+      if (onDelete) {
+        await onDelete(clip.filename);
+      } else {
+        const res = await fetch(`/api/jobs/${jobId}/clips/${clip.filename}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Delete failed');
+      }
+    } catch (err) {
+      console.error('Delete clip error:', err);
+      alert('Failed to delete clip');
     } finally {
-      setDownloading(false);
+      setIsDeleting(false);
     }
   };
 
-  const score = Math.round(clip.score || 85);
-  const duration = Math.round(clip.duration || clip.end - clip.start || 40);
+  const handleDownload = (e, url, filename) => {
+    e.stopPropagation();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const durationSec = clip.duration ? Math.round(clip.duration) : Math.round((clip.end || 0) - (clip.start || 0));
+  const score = Math.round(clip.score || clip.virality_score || 75);
 
   return (
-    <div className="card overflow-hidden flex flex-col group card-interactive">
-      {/* 9:16 Vertical Video Preview Container */}
-      <div className="relative aspect-[9/16] bg-black overflow-hidden flex items-center justify-center">
+    <div className="card p-3 shadow-xl border border-rule2 bg-[#0e1015] hover:border-brass/40 transition-all group flex flex-col justify-between">
+      {/* Video Container (9:16 Portrait) */}
+      <div className="relative aspect-[9/16] rounded-card overflow-hidden bg-black flex items-center justify-center border border-rule group/video">
         <video
-          ref={videoRef}
           src={videoUrl}
-          playsInline
-          loop
-          className="w-full h-full object-cover cursor-pointer"
-          onClick={togglePlay}
+          controls
+          preload="metadata"
+          className="w-full h-full object-cover"
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
         />
 
-        {/* Score & Duration Badges */}
-        <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/75 border border-rule font-mono text-[11px] font-bold text-brass backdrop-blur-md">
-            <Sparkles size={12} />
-            <span>Score {score}</span>
-          </div>
-          <div className="px-2.5 py-1 rounded-full bg-black/75 border border-rule font-mono text-[11px] text-ink backdrop-blur-md">
-            {duration}s
-          </div>
+        {/* Top Badges */}
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-10">
+          <span className="pill pill-ok text-[10px] font-mono shadow-md backdrop-blur-md">
+            Score {score}
+          </span>
+          {durationSec > 0 && (
+            <span className="pill bg-black/75 border border-rule text-ink text-[10px] font-mono shadow-md backdrop-blur-md">
+              {durationSec}s
+            </span>
+          )}
         </div>
-
-        {/* Play Overlay Button */}
-        {!isPlaying && (
-          <button
-            type="button"
-            onClick={togglePlay}
-            className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/20 transition-colors z-10"
-          >
-            <div className="w-14 h-14 rounded-full bg-brass/90 text-brassink flex items-center justify-center shadow-xl transform group-hover:scale-105 transition-transform">
-              <Play size={22} className="ml-1" fill="currentColor" />
-            </div>
-          </button>
-        )}
       </div>
 
-      {/* Card Details & Actions */}
-      <div className="p-4 flex flex-col flex-1 justify-between gap-3 bg-paper2">
-        <div>
-          <div className="flex items-center justify-between gap-2 mb-1.5">
-            <span className="eyebrow text-brass">CLIP #{index + 1}</span>
-            <div className="flex items-center gap-1.5">
-              <span className="readout text-[10px] bg-paper px-2 py-0.5 rounded-full border border-rule text-muted">
-                {clip.layout || '9:16 Vertical'}
-              </span>
-            </div>
-          </div>
-
-          <h3 className="text-sm font-semibold text-ink line-clamp-2 leading-snug" title={clip.title}>
-            {clip.title || 'Viral Clip Moment'}
-          </h3>
-
-          {clip.hook && (
-            <p className="text-xs text-muted mt-1 line-clamp-2 italic">
-              "{clip.hook}"
-            </p>
-          )}
+      {/* Clip Info & Caption */}
+      <div className="mt-3 space-y-2">
+        <div className="min-h-[38px]">
+          <p className="text-xs font-medium text-ink line-clamp-2 leading-snug">
+            {clip.title || clip.hook || clip.text || clip.filename}
+          </p>
         </div>
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-rule">
+        <div className="flex items-center gap-1.5 pt-1">
           <button
             type="button"
-            onClick={handleDownload}
-            disabled={downloading}
-            className="btn-primary py-2 px-3 text-xs flex items-center justify-center gap-1.5"
+            onClick={(e) => handleDownload(e, videoUrl, clip.filename)}
+            className="flex-1 py-1.5 px-2 bg-paper3 hover:bg-brass hover:text-brassink text-ink rounded-input text-[11px] font-medium transition-all flex items-center justify-center gap-1 border border-rule"
+            title="Download MP4"
           >
-            <Download size={14} />
-            <span>{downloading ? 'Saving…' : 'MP4'}</span>
+            <Download size={12} />
+            <span>MP4</span>
           </button>
 
-          <a
-            href={srtUrl}
-            download={`${clip.filename?.replace(/\.[^.]+$/, '') || `clip-${index + 1}`}.srt`}
-            className="btn-ghost py-2 px-3 text-xs flex items-center justify-center gap-1.5 text-center"
+          <button
+            type="button"
+            onClick={(e) => handleDownload(e, srtUrl, clip.filename.replace(/\.mp4$/i, '.srt'))}
+            className="py-1.5 px-2.5 bg-paper2 hover:bg-paper3 text-muted hover:text-ink rounded-input text-[11px] font-mono transition-colors border border-rule"
+            title="Download Subtitles SRT"
           >
-            <FileText size={14} />
-            <span>SRT</span>
-          </a>
+            SRT
+          </button>
+
+          <button
+            type="button"
+            disabled={isDeleting}
+            onClick={handleDelete}
+            className="p-1.5 bg-paper2 hover:bg-err/20 text-muted hover:text-err rounded-input transition-colors border border-rule shrink-0"
+            title="Delete this clip"
+          >
+            <Trash2 size={13} className={isDeleting ? 'animate-spin' : ''} />
+          </button>
         </div>
       </div>
     </div>

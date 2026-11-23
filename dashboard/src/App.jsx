@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Header from './components/Header';
+import Sidebar from './components/Sidebar';
 import MediaInput from './components/MediaInput';
 import ProcessingAnimation from './components/ProcessingAnimation';
-import ResultCard from './components/ResultCard';
-import RecentJobs from './components/RecentJobs';
-import { AlertCircle, ArrowLeft, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react';
+import HistoryView from './components/HistoryView';
+import AIConnectView from './components/AIConnectView';
+import SettingsView from './components/SettingsView';
+import { AlertCircle, Film, Sparkles, Cookie, Activity, X } from 'lucide-react';
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('generator'); // 'generator' | 'history' | 'aiconnect' | 'settings'
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarPosition, setSidebarPosition] = useState(
+    () => localStorage.getItem('clip_sidebar_pos') || 'right'
+  );
+
   const [config, setConfig] = useState(null);
   const [cookieStatus, setCookieStatus] = useState(null);
   const [jobs, setJobs] = useState([]);
@@ -17,8 +24,14 @@ export default function App() {
 
   const pollTimerRef = useRef(null);
 
-  // Load initial backend config, cookies & recent jobs
-  const fetchInitialData = async () => {
+  // Sync sidebar position to storage
+  const updateSidebarPosition = (pos) => {
+    setSidebarPosition(pos);
+    localStorage.setItem('clip_sidebar_pos', pos);
+  };
+
+  // Fetch initial system state
+  const fetchData = async () => {
     try {
       const [cfgRes, cookRes, jobsRes] = await Promise.all([
         fetch('/api/config'),
@@ -32,14 +45,14 @@ export default function App() {
         setJobs(Array.isArray(j) ? j : []);
       }
     } catch (e) {
-      console.warn('Initial fetch error:', e);
+      console.warn('Initial data fetch error:', e);
     }
   };
 
   useEffect(() => {
-    fetchInitialData();
+    fetchData();
 
-    // Reconnect active job from localStorage if refreshed
+    // Check if an active job was running from localStorage
     const savedJobId = localStorage.getItem('clip_active_job');
     if (savedJobId) {
       pollJob(savedJobId);
@@ -58,15 +71,23 @@ export default function App() {
     const tick = async () => {
       try {
         const res = await fetch(`/api/jobs/${jobId}`);
-        if (!res.ok) throw new Error('Failed to fetch job state');
+        if (!res.ok) {
+          if (res.status === 404) {
+            clearInterval(pollTimerRef.current);
+            localStorage.removeItem('clip_active_job');
+            setIsProcessing(false);
+            setActiveJob(null);
+          }
+          return;
+        }
+
         const data = await res.json();
         setActiveJob(data);
 
-        // Append to logs if message changes
         if (data.message) {
           setLogs((prev) => {
             if (prev.length === 0 || prev[prev.length - 1] !== data.message) {
-              return [...prev.slice(-40), data.message];
+              return [...prev.slice(-50), data.message];
             }
             return prev;
           });
@@ -76,13 +97,15 @@ export default function App() {
           setIsProcessing(false);
           clearInterval(pollTimerRef.current);
           localStorage.removeItem('clip_active_job');
-          fetchInitialData();
-        } else if (data.status === 'error') {
+          fetchData();
+        } else if (data.status === 'error' || data.status === 'cancelled') {
           setIsProcessing(false);
           clearInterval(pollTimerRef.current);
           localStorage.removeItem('clip_active_job');
-          setError(data.error || data.message || 'Job failed');
-          fetchInitialData();
+          if (data.status === 'error') {
+            setError(data.error || data.message || 'Job processing failed');
+          }
+          fetchData();
         }
       } catch (err) {
         console.warn('Polling error:', err);
@@ -95,16 +118,18 @@ export default function App() {
 
   const handleProcess = async ({ type, payload, options }) => {
     setError(null);
-    setLogs([]);
+    setLogs(['Submitting job to processor...']);
+    setIsProcessing(true);
+
     try {
       let res;
       if (type === 'file') {
-        const form = new FormData();
-        form.append('file', payload);
+        const fd = new FormData();
+        fd.append('file', payload);
         Object.entries(options).forEach(([k, v]) => {
-          if (v !== null && v !== undefined) form.append(k, v);
+          if (v !== undefined && v !== null) fd.append(k, String(v));
         });
-        res = await fetch('/api/jobs/upload', { method: 'POST', body: form });
+        res = await fetch('/api/jobs/upload', { method: 'POST', body: fd });
       } else {
         res = await fetch('/api/jobs', {
           method: 'POST',
@@ -114,19 +139,49 @@ export default function App() {
       }
 
       if (!res.ok) {
-        let detail = 'Submission failed';
-        try {
-          const b = await res.json();
-          detail = b.detail || detail;
-        } catch (_) {}
-        throw new Error(detail);
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || errData.error || `Server responded with ${res.status}`);
       }
 
-      const jobData = await res.json();
-      pollJob(jobData.id);
+      const data = await res.json();
+      pollJob(data.id);
     } catch (err) {
-      setError(err.message);
+      console.error('Job submission failed:', err);
+      setError(err.message || 'Failed to start video processing');
       setIsProcessing(false);
+    }
+  };
+
+  // Terminate active project on "+ new project" button click (as requested)
+  const handleCancelProject = async () => {
+    if (activeJob?.id) {
+      try {
+        await fetch(`/api/jobs/${activeJob.id}/cancel`, { method: 'POST' });
+      } catch (err) {
+        console.warn('Cancel project error:', err);
+      }
+    }
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    localStorage.removeItem('clip_active_job');
+    setActiveJob(null);
+    setIsProcessing(false);
+    setLogs([]);
+    fetchData();
+  };
+
+  const handleDeleteClip = async (filename) => {
+    if (!activeJob?.id) return;
+    try {
+      const res = await fetch(`/api/jobs/${activeJob.id}/clips/${filename}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      setActiveJob((prev) => ({
+        ...prev,
+        clips: (prev.clips || []).filter((c) => c.filename !== filename),
+      }));
+      fetchData();
+    } catch (err) {
+      console.error('Delete clip error:', err);
+      alert('Failed to delete clip');
     }
   };
 
@@ -135,159 +190,167 @@ export default function App() {
     fd.append('file', file);
     try {
       const res = await fetch('/api/cookies', { method: 'POST', body: fd });
-      if (res.ok) {
-        const status = await (await fetch('/api/cookies')).json();
-        setCookieStatus(status);
-        setError(null);
-        alert('cookies.txt uploaded successfully! YouTube authentication is active.');
-      } else {
-        alert('Failed to upload cookies.txt');
-      }
-    } catch (e) {
-      alert('Upload error: ' + e.message);
+      if (!res.ok) throw new Error('Upload failed');
+      fetchData();
+      alert('cookies.txt uploaded successfully!');
+    } catch (err) {
+      console.error('Cookie upload error:', err);
+      alert('Failed to upload cookies.txt');
     }
   };
 
-  const handleDeleteJob = async (jobId) => {
+  const handleDeleteCookies = async () => {
+    if (!window.confirm('Delete uploaded cookies?')) return;
     try {
-      await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
-      if (activeJob?.id === jobId) setActiveJob(null);
-      fetchInitialData();
-    } catch (e) {}
+      const res = await fetch('/api/cookies', { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      fetchData();
+    } catch (err) {
+      console.error('Cookie delete error:', err);
+      alert('Failed to delete cookies');
+    }
   };
-
-  const handleDeleteAllJobs = async () => {
-    try {
-      await fetch('/api/jobs', { method: 'DELETE' });
-      setActiveJob(null);
-      setJobs([]);
-      fetchInitialData();
-    } catch (e) {}
-  };
-
-  const isBotError = error && (
-    error.includes('Bot Protection') ||
-    error.includes('Sign in to confirm') ||
-    error.includes('confirm you\'re not a bot')
-  );
 
   return (
-    <div className="min-h-screen flex flex-col bg-paper text-ink selection:bg-brass selection:text-brassink">
-      <Header config={config} cookieStatus={cookieStatus} />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 flex-1 w-full space-y-8">
-        {/* Error Notification Banner */}
-        {error && (
-          <div className="p-5 rounded-card border border-danger/40 bg-danger/10 text-ink animate-fade">
-            <div className="flex items-start gap-3">
-              <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-danger text-sm">
-                  {isBotError ? 'YouTube Bot Verification Required' : 'Processing Error'}
-                </h3>
-                <p className="text-xs text-ink2 mt-1 leading-relaxed whitespace-pre-line">{error}</p>
-
-                {isBotError && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setError(null)}
-                      className="btn-primary text-xs py-1.5 px-3"
-                    >
-                      Use "Upload File" Tab (Instant Clip)
-                    </button>
-                    <label className="btn-ghost text-xs py-1.5 px-3 cursor-pointer">
-                      Upload cookies.txt
-                      <input
-                        type="file"
-                        accept=".txt"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) handleUploadCookies(f);
-                        }}
-                      />
-                    </label>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Top: Media Input & Configuration */}
-        <MediaInput
-          onProcess={handleProcess}
-          isProcessing={isProcessing}
-          onUploadCookies={handleUploadCookies}
-          cookieStatus={cookieStatus}
+    <div className="flex h-screen w-screen overflow-hidden bg-[#0a0c10] text-ink font-sans">
+      {/* If sidebarPosition is 'left', render sidebar first */}
+      {sidebarPosition === 'left' && (
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={(tab) => {
+            setActiveTab(tab);
+            setError(null);
+          }}
+          collapsed={sidebarCollapsed}
+          setCollapsed={setSidebarCollapsed}
+          sidebarPosition={sidebarPosition}
+          setSidebarPosition={updateSidebarPosition}
         />
+      )}
 
-        {/* Live Processing or Results Workbench */}
-        {activeJob && (
-          <section className="space-y-6 animate-fade">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles size={18} className="text-brass" />
-                <h2 className="text-base font-semibold text-ink font-mono uppercase tracking-wider">
-                  {activeJob.status === 'done' ? `Generated Shorts (${activeJob.clips?.length || 0})` : 'Processing Video'}
-                </h2>
+      {/* Main Content Area (Left side when sidebar is on right) */}
+      <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
+        {/* Subtle Top Status Bar */}
+        <header className="h-14 px-6 border-b border-rule bg-paper/80 backdrop-blur-md flex items-center justify-between shrink-0 z-20">
+          <div className="flex items-center gap-3">
+            <span className="font-semibold text-ink text-sm tracking-tight">
+              {activeTab === 'generator' && (isProcessing || activeJob ? 'workbench' : 'generator')}
+              {activeTab === 'history' && 'history'}
+              {activeTab === 'aiconnect' && 'ai connect'}
+              {activeTab === 'settings' && 'settings'}
+            </span>
+            <span className="text-[10px] text-muted font-mono bg-paper3 px-2 py-0.5 rounded border border-rule">
+              OPENSHORTS ENGINE
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs">
+            {cookieStatus?.has_cookies && (
+              <span className="pill pill-ok text-[10px] font-mono hidden sm:inline-flex items-center gap-1">
+                <Cookie size={11} /> cookies active
+              </span>
+            )}
+            <span
+              onClick={() => setActiveTab('aiconnect')}
+              className="pill pill-muted hover:border-brass/50 text-[10px] font-mono cursor-pointer flex items-center gap-1 transition-colors"
+              title="Click to configure AI engine"
+            >
+              <Sparkles size={11} className="text-brass" />
+              <span>{config?.llm?.ready ? `AI: ${config.llm.provider}` : 'Local AI'}</span>
+            </span>
+          </div>
+        </header>
+
+        {/* Scrollable View Area */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+          {/* Error Banner */}
+          {error && (
+            <div className="max-w-2xl mx-auto mb-6 p-4 rounded-card bg-err/10 border border-err/30 text-err text-xs flex items-start justify-between gap-3 animate-fade shadow-lg">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <span className="font-semibold block">Processing Issue</span>
+                  <p className="leading-relaxed opacity-90">{error}</p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="text-err/70 hover:text-err p-1 shrink-0"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
-              {activeJob.status === 'done' && (
-                <button
-                  type="button"
-                  onClick={() => setActiveJob(null)}
-                  className="btn-ghost text-xs py-1.5 px-3 flex items-center gap-1.5 text-muted hover:text-ink"
-                >
-                  <ArrowLeft size={13} />
-                  New Project
-                </button>
+          {/* Tab 1: Clip Generator (Image 1 or Workbench Image 3) */}
+          {activeTab === 'generator' && (
+            <div>
+              {isProcessing || activeJob ? (
+                /* Workbench Mode (Matching Image 3) */
+                <ProcessingAnimation
+                  job={activeJob}
+                  logs={logs}
+                  onCancelProject={handleCancelProject}
+                  onDeleteClip={handleDeleteClip}
+                />
+              ) : (
+                /* Initial Generator Input Card (Matching Image 1) */
+                <MediaInput
+                  onProcess={handleProcess}
+                  isProcessing={isProcessing}
+                  onUploadCookies={handleUploadCookies}
+                  cookieStatus={cookieStatus}
+                />
               )}
             </div>
+          )}
 
-            {/* If Processing: Show Live HUD & Terminal */}
-            {isProcessing && (
-              <ProcessingAnimation job={activeJob} logs={logs} />
-            )}
+          {/* Tab 2: History (4 Clips per row grid, download, delete, preview) */}
+          {activeTab === 'history' && (
+            <HistoryView
+              jobs={jobs}
+              onRefresh={fetchData}
+              onNavigateToGenerator={() => setActiveTab('generator')}
+            />
+          )}
 
-            {/* If Done: Show Result Cards Gallery */}
-            {activeJob.status === 'done' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {activeJob.clips && activeJob.clips.length > 0 ? (
-                  activeJob.clips.map((clip, i) => (
-                    <ResultCard
-                      key={clip.filename || i}
-                      clip={clip}
-                      index={i}
-                      jobId={activeJob.id}
-                    />
-                  ))
-                ) : (
-                  <div className="col-span-full text-center py-12 card text-muted font-mono text-sm">
-                    No clips could be generated from this segment.
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-        )}
+          {/* Tab 3: AI Connect (Gemini, OpenAI, Heuristic dropdown & keys) */}
+          {activeTab === 'aiconnect' && (
+            <AIConnectView
+              onAIUpdated={() => {
+                fetchData();
+              }}
+            />
+          )}
 
-        {/* Bottom: Collapsible History Drawer */}
-        <RecentJobs
-          jobs={jobs}
-          onSelectJob={(id) => {
-            const found = jobs.find((j) => j.id === id);
-            if (found) setActiveJob(found);
-          }}
-          onDeleteJob={handleDeleteJob}
-          onDeleteAllJobs={handleDeleteAllJobs}
-        />
+          {/* Tab 4: Settings (Hinglish/English/Hindi, Whisper, Stabilization, Cookies) */}
+          {activeTab === 'settings' && (
+            <SettingsView
+              cookieStatus={cookieStatus}
+              onUploadCookies={handleUploadCookies}
+              onDeleteCookies={handleDeleteCookies}
+              sidebarPosition={sidebarPosition}
+              setSidebarPosition={updateSidebarPosition}
+            />
+          )}
+        </div>
       </main>
 
-      <footer className="border-t border-rule py-6 text-center text-xs font-mono text-muted">
-        Clip Studio Engine · Local GPU/CPU High-Speed Pipeline
-      </footer>
+      {/* If sidebarPosition is 'right', render sidebar on right (Requested) */}
+      {sidebarPosition === 'right' && (
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={(tab) => {
+            setActiveTab(tab);
+            setError(null);
+          }}
+          collapsed={sidebarCollapsed}
+          setCollapsed={setSidebarCollapsed}
+          sidebarPosition={sidebarPosition}
+          setSidebarPosition={updateSidebarPosition}
+        />
+      )}
     </div>
   );
 }

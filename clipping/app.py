@@ -356,3 +356,78 @@ def delete_cookies() -> dict:
         if p.exists():
             p.unlink(missing_ok=True)
     return {"ok": True}
+
+
+from .config import load_ai_config, save_ai_config
+
+
+@app.get("/api/ai")
+def get_ai():
+    cfg = load_ai_config()
+    current_settings = Settings()
+    return {
+        "provider": current_settings.llm_provider,
+        "has_gemini": bool(current_settings.gemini_api_key),
+        "has_openai": bool(current_settings.openai_api_key),
+        "gemini_api_key": cfg.get("gemini_api_key", ""),
+        "openai_api_key": cfg.get("openai_api_key", ""),
+        "gemini_model": current_settings.gemini_model,
+        "openai_model": current_settings.openai_model,
+    }
+
+
+class AIConfigRequest(BaseModel):
+    provider: str
+    gemini_api_key: str | None = None
+    openai_api_key: str | None = None
+    gemini_model: str | None = None
+    openai_model: str | None = None
+
+
+@app.post("/api/ai")
+def set_ai(req: AIConfigRequest):
+    cfg = load_ai_config()
+    cfg["provider"] = req.provider
+    if req.gemini_api_key is not None:
+        cfg["gemini_api_key"] = req.gemini_api_key.strip()
+    if req.openai_api_key is not None:
+        cfg["openai_api_key"] = req.openai_api_key.strip()
+    if req.gemini_model is not None:
+        cfg["gemini_model"] = req.gemini_model.strip()
+    if req.openai_model is not None:
+        cfg["openai_model"] = req.openai_model.strip()
+    save_ai_config(cfg)
+    return {"ok": True, "provider": cfg["provider"]}
+
+
+@app.delete("/api/jobs/{job_id}/clips/{filename}")
+def delete_clip(job_id: str, filename: str):
+    path = _job_path(job_id)
+    clip_file = path / filename
+    if clip_file.exists():
+        clip_file.unlink(missing_ok=True)
+    srt_file = path / (Path(filename).stem + ".srt")
+    if srt_file.exists():
+        srt_file.unlink(missing_ok=True)
+    with LOCK:
+        job = _read_job(job_id)
+        job["clips"] = [c for c in job.get("clips", []) if c.get("filename") != filename]
+        JOB_CACHE[job_id] = job
+        write_json(path / "job.json", job)
+    return {"ok": True, "deleted": filename}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str):
+    path = JOBS_DIR / job_id
+    with LOCK:
+        if job_id in JOB_CACHE:
+            JOB_CACHE[job_id]["status"] = "cancelled"
+            JOB_CACHE[job_id]["message"] = "Cancelled by user"
+            JOB_CACHE.pop(job_id, None)
+    if path.exists():
+        try:
+            pipeline.delete_job(path)
+        except Exception:
+            pass
+    return {"ok": True, "cancelled": job_id}
