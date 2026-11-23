@@ -26,3 +26,8 @@ tests/
 Thumbs.db
 .vscode/
 .idea/
+
+# Frontend node_modules & build
+dashboard/node_modules/
+node_modules/
+

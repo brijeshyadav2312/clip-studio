@@ -1,0 +1,141 @@
+@import './tokens.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink-2);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    overflow-x: hidden;
+  }
+}
+
+@layer components {
+  /* Hairline card lit from within */
+  .card {
+    background:
+      radial-gradient(120% 90% at 50% 0%, var(--color-paper-emit) 0%, transparent 70%),
+      var(--color-paper-2);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-card);
+  }
+
+  .card-interactive {
+    transition: transform var(--dur-short) var(--ease-out),
+                border-color var(--dur-short) var(--ease-out);
+  }
+  .card-interactive:hover {
+    border-color: var(--color-rule-2);
+  }
+
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink);
+    opacity: 0.6;
+  }
+
+  .readout {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .input-field {
+    width: 100%;
+    font-size: 14px;
+    color: var(--color-ink);
+    background: var(--color-paper);
+    border: 1px solid var(--color-rule-2);
+    border-radius: var(--radius-input);
+    padding: 0.75rem 1rem;
+    outline: none;
+    transition: border-color var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out);
+  }
+  .input-field:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px rgba(229, 169, 60, 0.2);
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--color-accent), #f3b552);
+    color: var(--color-accent-ink);
+    font-weight: 650;
+    font-size: 14px;
+    border-radius: var(--radius-input);
+    padding: 0.75rem 1.5rem;
+    border: 0;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(229, 169, 60, 0.25);
+    transition: transform var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out);
+  }
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(229, 169, 60, 0.38);
+  }
+  .btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    background: #232736;
+    color: #6a7185;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .btn-ghost {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-input);
+    padding: 0.6rem 1rem;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out);
+  }
+  .btn-ghost:hover {
+    background: var(--color-paper-3);
+    border-color: var(--color-rule-2);
+  }
+
+  .pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--color-rule);
+    background: var(--color-paper);
+    color: var(--color-muted);
+  }
+  .pill-ok {
+    border-color: rgba(75, 212, 130, 0.3);
+    background: rgba(75, 212, 130, 0.1);
+    color: #4bd482;
+  }
+  .pill-warn {
+    border-color: rgba(255, 202, 98, 0.3);
+    background: rgba(255, 202, 98, 0.1);
+    color: #ffca62;
+  }
+
+  /* Custom terminal scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.22);
+  }
+}

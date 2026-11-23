@@ -26,9 +26,12 @@ from .utils import ToolError, read_json, strip_ansi, video_info, write_json
 JOBS_DIR = DATA_DIR / "jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = ROOT / "static"
+DIST_DIR = STATIC_DIR / "dist"
 
 app = FastAPI(title="Clip Studio", version="1.0")
 app.mount("/media", StaticFiles(directory=str(JOBS_DIR)), name="media")
+if (DIST_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
 
 POOL = ThreadPoolExecutor(max_workers=int(os.getenv("CLIP_WORKERS", "1")), thread_name_prefix="clip")
 LOCK = threading.Lock()
@@ -143,6 +146,8 @@ def _start(settings: Settings, url: str | None, upload: Path | None,
 
 @app.get("/")
 def index():
+    if (DIST_DIR / "index.html").exists():
+        return FileResponse(DIST_DIR / "index.html")
     return FileResponse(STATIC_DIR / "index.html")
 
 
