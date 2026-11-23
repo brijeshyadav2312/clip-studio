@@ -16,6 +16,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from yt_dlp import YoutubeDL
 
 from . import pipeline
 from .config import DATA_DIR, ROOT, Settings, settings_for
@@ -88,6 +89,58 @@ class JobRequest(BaseModel):
     censor: bool = False
     hook: str | None = None
     title: str | None = None
+
+
+class UrlInfoRequest(BaseModel):
+    url: str
+
+
+@app.post("/api/info")
+def fetch_url_info(req: UrlInfoRequest) -> dict:
+    url = req.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Empty URL provided")
+
+    opts: dict[str, Any] = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "socket_timeout": 15,
+        "extract_flat": False,
+    }
+    # Check cookies file if present
+    cookie_candidate = None
+    if (DATA_DIR / "cookies.txt").exists():
+        cookie_candidate = DATA_DIR / "cookies.txt"
+    elif (ROOT / "cookies.txt").exists():
+        cookie_candidate = ROOT / "cookies.txt"
+    if cookie_candidate:
+        opts["cookiefile"] = str(cookie_candidate)
+
+    try:
+        with YoutubeDL(opts) as ydl:
+            data = ydl.extract_info(url, download=False)
+            if isinstance(data, dict):
+                if data.get("entries"):
+                    data = data["entries"][0]
+                return {
+                    "ok": True,
+                    "title": data.get("title") or "Untitled Video",
+                    "uploader": data.get("uploader") or data.get("channel") or "Unknown Channel",
+                    "duration": data.get("duration") or 0,
+                    "thumbnail": data.get("thumbnail") or "",
+                    "view_count": data.get("view_count"),
+                    "webpage_url": data.get("webpage_url") or url,
+                }
+            raise HTTPException(status_code=400, detail="Could not read video information from this URL")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to fetch video details: {str(exc).splitlines()[0]}"
+        )
+
 
 
 def _job_path(job_id: str) -> Path:

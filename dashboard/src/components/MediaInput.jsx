@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Upload,
   UploadCloud,
@@ -17,15 +17,30 @@ import {
   Youtube,
   Instagram,
   ArrowRight,
+  Clipboard,
+  Loader2,
+  AlertCircle,
+  Clock,
+  User,
+  Play,
 } from 'lucide-react';
 
 export default function MediaInput({ onProcess, isProcessing, onUploadCookies, cookieStatus }) {
-  const [mode, setMode] = useState('upload'); // 'upload' | 'url'
+  // Input source by default: Link first, then upload file
+  const [mode, setMode] = useState('url'); // 'url' | 'upload'
   const [url, setUrl] = useState('');
   const [file, setFile] = useState(null);
   const [aspect, setAspect] = useState('9:16');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [rightsConfirmed, setRightsConfirmed] = useState(true);
+
+  // URL Video Info Fetch State
+  const [isFetchingInfo, setIsFetchingInfo] = useState(false);
+  const [videoInfo, setVideoInfo] = useState(null);
+  const [fetchError, setFetchError] = useState(null);
+
+  // Real-time Engine Health Check
+  const [serverHealth, setServerHealth] = useState({ status: 'checking', label: 'Checking engine...' });
 
   // Advanced Options State
   const [numClips, setNumClips] = useState(5);
@@ -52,12 +67,79 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
 
   const fileInputRef = useRef(null);
 
+  // Periodically check real-time server health
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkHealth = async () => {
+      try {
+        const res = await fetch('/health');
+        if (res.ok) {
+          if (isMounted) setServerHealth({ status: 'ready', label: 'Engine Ready' });
+        } else {
+          if (isMounted) setServerHealth({ status: 'warning', label: 'Engine Degraded' });
+        }
+      } catch (err) {
+        if (isMounted) setServerHealth({ status: 'offline', label: 'Engine Offline' });
+      }
+    };
+
+    checkHealth();
+    const interval = setInterval(checkHealth, 6000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   const handleDrop = (e) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       setFile(e.dataTransfer.files[0]);
       setMode('upload');
     }
+  };
+
+  const handleFetchInfo = async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+
+    setIsFetchingInfo(true);
+    setFetchError(null);
+
+    try {
+      const res = await fetch('/api/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: trimmed }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Could not fetch video information');
+      }
+
+      const data = await res.json();
+      setVideoInfo(data);
+    } catch (err) {
+      console.warn('Fetch info error:', err);
+      setFetchError(err.message || 'Failed to fetch video information');
+      setVideoInfo(null);
+    } finally {
+      setIsFetchingInfo(false);
+    }
+  };
+
+  const formatDuration = (seconds) => {
+    if (!seconds) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    if (mins >= 60) {
+      const hrs = Math.floor(mins / 60);
+      const remMins = mins % 60;
+      return `${hrs}:${remMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const handleSubmit = (e) => {
@@ -101,10 +183,10 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
 
   return (
     <div className="w-full h-full flex flex-col justify-between select-none">
-      {/* Main Two-Column Full Page Grid */}
+      {/* Main Two-Column Full Page Grid with subtle gradient lit backdrop */}
       <form
         onSubmit={handleSubmit}
-        className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 pb-4"
+        className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 pb-3"
       >
         {/* ========================================================= */}
         {/* LEFT COLUMN: Output Format, Advanced Options, CTA button  */}
@@ -122,7 +204,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
               </span>
             </div>
 
-            {/* 3 Format Selection Cards */}
+            {/* 3 Format Selection Cards with Reverted Rich Gradient Backdrop */}
             <div className="grid grid-cols-3 gap-3">
               {/* 9:16 Card */}
               <button
@@ -130,8 +212,8 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                 onClick={() => setAspect('9:16')}
                 className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all text-center cursor-pointer ${
                   aspect === '9:16'
-                    ? 'border-[#ba6238] bg-[#ba6238]/10 shadow-[0_0_15px_rgba(186,98,56,0.15)] ring-1 ring-[#ba6238]/50'
-                    : 'border-rule bg-[#0e1015] hover:border-rule2 hover:bg-paper2/60'
+                    ? 'border-[#ba6238] bg-gradient-to-b from-[#ba6238]/20 via-[#ba6238]/10 to-[#0e1015] shadow-[0_0_15px_rgba(186,98,56,0.2)] ring-1 ring-[#ba6238]/60'
+                    : 'border-rule bg-gradient-to-b from-[#141822] to-[#0c0e14] hover:border-rule2 hover:from-[#191e2b] hover:to-[#0f121a]'
                 }`}
               >
                 <div
@@ -163,8 +245,8 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                 onClick={() => setAspect('1:1')}
                 className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all text-center cursor-pointer ${
                   aspect === '1:1'
-                    ? 'border-[#ba6238] bg-[#ba6238]/10 shadow-[0_0_15px_rgba(186,98,56,0.15)] ring-1 ring-[#ba6238]/50'
-                    : 'border-rule bg-[#0e1015] hover:border-rule2 hover:bg-paper2/60'
+                    ? 'border-[#ba6238] bg-gradient-to-b from-[#ba6238]/20 via-[#ba6238]/10 to-[#0e1015] shadow-[0_0_15px_rgba(186,98,56,0.2)] ring-1 ring-[#ba6238]/60'
+                    : 'border-rule bg-gradient-to-b from-[#141822] to-[#0c0e14] hover:border-rule2 hover:from-[#191e2b] hover:to-[#0f121a]'
                 }`}
               >
                 <div
@@ -190,8 +272,8 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                 onClick={() => setAspect('16:9')}
                 className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all text-center cursor-pointer ${
                   aspect === '16:9'
-                    ? 'border-[#ba6238] bg-[#ba6238]/10 shadow-[0_0_15px_rgba(186,98,56,0.15)] ring-1 ring-[#ba6238]/50'
-                    : 'border-rule bg-[#0e1015] hover:border-rule2 hover:bg-paper2/60'
+                    ? 'border-[#ba6238] bg-gradient-to-b from-[#ba6238]/20 via-[#ba6238]/10 to-[#0e1015] shadow-[0_0_15px_rgba(186,98,56,0.2)] ring-1 ring-[#ba6238]/60'
+                    : 'border-rule bg-gradient-to-b from-[#141822] to-[#0c0e14] hover:border-rule2 hover:from-[#191e2b] hover:to-[#0f121a]'
                 }`}
               >
                 <div
@@ -212,12 +294,12 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
               </button>
             </div>
 
-            {/* Advanced Options Accordion */}
+            {/* Advanced Options Accordion with Reverted Rich Gradient Backdrop */}
             <div className="pt-1">
               <button
                 type="button"
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className="w-full flex items-center justify-between p-3.5 rounded-2xl border border-rule bg-[#0e1015] hover:border-rule2 hover:bg-paper2/60 text-ink text-xs sm:text-sm font-medium transition-colors cursor-pointer"
+                className="w-full flex items-center justify-between p-3.5 rounded-2xl border border-rule bg-gradient-to-b from-[#141822] to-[#0c0e14] hover:border-rule2 text-ink text-xs sm:text-sm font-medium transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-2.5">
                   <SlidersHorizontal size={16} className="text-[#ba6238] shrink-0" />
@@ -232,7 +314,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
               </button>
 
               {showAdvanced && (
-                <div className="mt-3 p-4 rounded-2xl border border-rule bg-[#0e1015] space-y-3.5 animate-fade text-xs">
+                <div className="mt-3 p-4 rounded-2xl border border-rule bg-gradient-to-b from-[#141822] to-[#0c0e14] space-y-3.5 animate-fade text-xs">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="text-muted block mb-1 font-mono text-[11px] truncate">
@@ -241,7 +323,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                       <select
                         value={subtitleScript}
                         onChange={(e) => setSubtitleScript(e.target.value)}
-                        className="w-full bg-paper2 border border-rule rounded-xl p-2.5 text-xs text-ink focus:border-[#ba6238] focus:outline-none cursor-pointer"
+                        className="w-full bg-[#0a0c10] border border-rule rounded-xl p-2.5 text-xs text-ink focus:border-[#ba6238] focus:outline-none cursor-pointer"
                       >
                         <option value="auto">Auto (Detect Hindi/English)</option>
                         <option value="hinglish">Hinglish (Roman English script)</option>
@@ -257,7 +339,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                       <select
                         value={captionStyle}
                         onChange={(e) => setCaptionStyle(e.target.value)}
-                        className="w-full bg-paper2 border border-rule rounded-xl p-2.5 text-xs text-ink focus:border-[#ba6238] focus:outline-none cursor-pointer"
+                        className="w-full bg-[#0a0c10] border border-rule rounded-xl p-2.5 text-xs text-ink focus:border-[#ba6238] focus:outline-none cursor-pointer"
                       >
                         <option value="wordpop">WordPop (Yellow dynamic pop)</option>
                         <option value="karaoke">Karaoke (Gradient reveal)</option>
@@ -275,7 +357,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                       <select
                         value={stabilization}
                         onChange={(e) => setStabilization(e.target.value)}
-                        className="w-full bg-paper2 border border-rule rounded-xl p-2.5 text-xs text-ink focus:border-[#ba6238] focus:outline-none cursor-pointer"
+                        className="w-full bg-[#0a0c10] border border-rule rounded-xl p-2.5 text-xs text-ink focus:border-[#ba6238] focus:outline-none cursor-pointer"
                       >
                         <option value="locked_tripod">Locked Tripod (Zero Jitter)</option>
                         <option value="smooth_pan">Smooth Dynamic Pan</option>
@@ -324,7 +406,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                       value={hook}
                       onChange={(e) => setHook(e.target.value)}
                       placeholder="e.g. Focus on AI discussion, market trends, high emotion..."
-                      className="w-full bg-paper2 border border-rule rounded-xl p-2.5 text-xs text-ink focus:border-[#ba6238] focus:outline-none placeholder:text-muted/60 truncate"
+                      className="w-full bg-[#0a0c10] border border-rule rounded-xl p-2.5 text-xs text-ink focus:border-[#ba6238] focus:outline-none placeholder:text-muted/60 truncate"
                     />
                   </div>
                 </div>
@@ -372,56 +454,237 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
         </div>
 
         {/* ========================================================= */}
-        {/* RIGHT COLUMN: Input Source (Upload / URL) - Completely FIXED */}
+        {/* RIGHT COLUMN: Input Source (Link First, URL at Top, Skeleton) */}
+        {/* Completely FIXED - No scroll                               */}
         {/* ========================================================= */}
-        <div className="flex flex-col justify-between h-full min-h-0 overflow-hidden lg:border-l lg:border-rule lg:pl-8 space-y-4">
-          <div className="flex-1 min-h-0 flex flex-col space-y-4">
-            {/* Header: INPUT SOURCE | [ Upload File ] [ Video URL ] */}
-            <div className="flex items-center justify-between pb-1 shrink-0">
+        <div className="flex flex-col justify-between h-full min-h-0 overflow-hidden lg:border-l lg:border-rule lg:pl-8 space-y-3.5">
+          <div className="flex-1 min-h-0 flex flex-col space-y-3.5">
+            {/* Header with Smooth Segmented Control: [ Video URL ] [ Upload File ] */}
+            <div className="flex items-center justify-between pb-0.5 shrink-0">
               <span className="text-[11px] font-mono tracking-widest text-muted uppercase font-bold">
                 INPUT SOURCE
               </span>
 
-              <div className="flex items-center gap-1.5 bg-[#0e1015] p-1 rounded-2xl border border-rule">
+              {/* Seamless Pill Toggle */}
+              <div className="flex items-center bg-[#0a0c12] p-1 rounded-2xl border border-rule/80 gap-1 shadow-inner">
                 <button
                   type="button"
-                  onClick={() => setMode('upload')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold tracking-wide transition-colors cursor-pointer ${
-                    mode === 'upload'
-                      ? 'bg-paper2 text-ink border border-rule shadow-sm'
-                      : 'text-muted hover:text-ink'
+                  onClick={() => setMode('url')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
+                    mode === 'url'
+                      ? 'bg-gradient-to-r from-[#ba6238] via-amber-600 to-[#ba6238] text-white shadow-md shadow-[#ba6238]/25 border border-[#ba6238]/40'
+                      : 'text-muted hover:text-ink hover:bg-paper2/50'
                   }`}
                 >
-                  <Upload size={13} className={mode === 'upload' ? 'text-[#ba6238]' : 'text-muted'} />
-                  <span className="truncate">Upload File</span>
+                  <Link2 size={13} className={mode === 'url' ? 'text-white' : 'text-muted'} />
+                  <span className="truncate">Video URL</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setMode('url')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold tracking-wide transition-colors cursor-pointer ${
-                    mode === 'url'
-                      ? 'bg-paper2 text-ink border border-rule shadow-sm'
-                      : 'text-muted hover:text-ink'
+                  onClick={() => setMode('upload')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
+                    mode === 'upload'
+                      ? 'bg-gradient-to-r from-[#ba6238] via-amber-600 to-[#ba6238] text-white shadow-md shadow-[#ba6238]/25 border border-[#ba6238]/40'
+                      : 'text-muted hover:text-ink hover:bg-paper2/50'
                   }`}
                 >
-                  <Link2 size={13} className={mode === 'url' ? 'text-[#ba6238]' : 'text-muted'} />
-                  <span className="truncate">Video URL</span>
+                  <Upload size={13} className={mode === 'upload' ? 'text-white' : 'text-muted'} />
+                  <span className="truncate">Upload File</span>
                 </button>
               </div>
             </div>
 
-            {/* Main Interactive Box: Dropzone or URL Input (Fills remaining height) */}
+            {/* Main Interactive Box: Video URL (Default) or Dropzone */}
             <div className="flex-1 min-h-0 flex flex-col">
-              {mode === 'upload' ? (
+              {mode === 'url' ? (
+                /* VIDEO URL MODE: Input at top, NO header title, Skeleton / Card design */
+                <div className="flex-1 min-h-[260px] rounded-2xl border border-rule bg-gradient-to-b from-[#141822] to-[#0c0e14] p-4 sm:p-5 flex flex-col justify-between space-y-3">
+                  {/* Top: URL Input Bar with Paste & Fetch Button (NO header title) */}
+                  <div className="space-y-1.5 shrink-0">
+                    <div className="relative flex items-center bg-[#090b10] border border-rule focus-within:border-[#ba6238] rounded-xl p-1 shadow-inner transition-colors">
+                      <Link2 size={16} className="text-[#ba6238] ml-2.5 mr-1.5 shrink-0" />
+                      <input
+                        type="url"
+                        value={url}
+                        onChange={(e) => {
+                          setUrl(e.target.value);
+                          if (fetchError) setFetchError(null);
+                        }}
+                        placeholder="Paste YouTube, Twitch, or Kick URL…"
+                        className="flex-1 bg-transparent py-2 px-1 text-xs sm:text-sm text-ink placeholder:text-muted/50 focus:outline-none min-w-0"
+                      />
+
+                      {url && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUrl('');
+                            setVideoInfo(null);
+                            setFetchError(null);
+                          }}
+                          className="p-1.5 text-muted hover:text-ink rounded-lg hover:bg-paper2 transition-colors cursor-pointer mr-1"
+                          title="Clear URL"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+
+                      {navigator.clipboard && !url && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const text = await navigator.clipboard.readText();
+                              if (text) setUrl(text);
+                            } catch (err) {
+                              // ignore
+                            }
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-mono text-muted hover:text-ink hover:bg-paper2 transition-colors flex items-center gap-1 cursor-pointer mr-1 shrink-0"
+                          title="Paste from clipboard"
+                        >
+                          <Clipboard size={12} />
+                          <span className="hidden sm:inline">Paste</span>
+                        </button>
+                      )}
+
+                      {/* Fetch Link Button */}
+                      <button
+                        type="button"
+                        onClick={handleFetchInfo}
+                        disabled={!url.trim() || isFetchingInfo}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono tracking-wide transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                          url.trim() && !isFetchingInfo
+                            ? 'bg-[#ba6238] hover:bg-[#ba6238]/90 text-white shadow-sm'
+                            : 'bg-paper3 text-muted/60 border border-rule cursor-not-allowed opacity-60'
+                        }`}
+                        title="Fetch video details and thumbnail"
+                      >
+                        {isFetchingInfo ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin text-white" />
+                            <span>Fetching…</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={13} />
+                            <span>Fetch Link</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {fetchError && (
+                      <div className="flex items-center gap-1.5 text-err text-[11px] px-1 font-mono">
+                        <AlertCircle size={13} className="shrink-0" />
+                        <span className="truncate">{fetchError}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Middle / Center: Skeleton Loader, Fetched Video Card, or Clean Guidance Slate */}
+                  <div className="flex-1 min-h-0 flex flex-col justify-center">
+                    {isFetchingInfo ? (
+                      /* High-Tech Skeleton Loading Design */
+                      <div className="w-full h-full min-h-[160px] p-4 rounded-xl border border-rule/60 bg-[#090b10]/80 flex flex-col justify-center space-y-3 animate-pulse">
+                        <div className="flex items-center gap-3.5">
+                          {/* Skeleton 16:9 Thumbnail Box */}
+                          <div className="w-32 sm:w-40 aspect-video rounded-lg bg-paper3/70 shrink-0 relative overflow-hidden">
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-scan" />
+                          </div>
+
+                          {/* Skeleton Content Lines */}
+                          <div className="flex-1 space-y-2 min-w-0">
+                            <div className="h-4 bg-paper3/80 rounded w-5/6" />
+                            <div className="h-3 bg-paper3/50 rounded w-3/5" />
+                            <div className="flex gap-2 pt-1">
+                              <div className="h-4 bg-paper3/60 rounded w-16" />
+                              <div className="h-4 bg-paper3/60 rounded w-20" />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-center font-mono text-[10.5px] text-[#ba6238] tracking-widest uppercase flex items-center justify-center gap-2">
+                          <Loader2 size={12} className="animate-spin" />
+                          <span>Inspecting video streams &amp; metadata…</span>
+                        </div>
+                      </div>
+                    ) : videoInfo ? (
+                      /* Inspected Video Details Card */
+                      <div className="w-full p-3 sm:p-3.5 rounded-xl border border-rule2 bg-[#090b10] flex flex-col sm:flex-row items-center gap-3.5 animate-fade shadow-lg">
+                        {/* 16:9 Thumbnail with Duration Badge */}
+                        <div className="w-full sm:w-44 aspect-video rounded-lg overflow-hidden border border-rule relative shrink-0 bg-black">
+                          {videoInfo.thumbnail ? (
+                            <img
+                              src={videoInfo.thumbnail}
+                              alt={videoInfo.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-paper3 text-muted">
+                              <Tv size={24} />
+                            </div>
+                          )}
+                          <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/85 text-[10px] font-mono font-bold text-white border border-white/10 shadow">
+                            {formatDuration(videoInfo.duration)}
+                          </div>
+                        </div>
+
+                        {/* Video Metadata */}
+                        <div className="flex-1 min-w-0 space-y-1.5 text-left w-full">
+                          <h4 className="text-xs sm:text-sm font-bold text-ink line-clamp-2 leading-snug">
+                            {videoInfo.title}
+                          </h4>
+
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted font-mono">
+                            <span className="flex items-center gap-1 text-ink/90 font-medium truncate max-w-[140px]">
+                              <User size={12} className="text-[#ba6238]" />
+                              {videoInfo.uploader}
+                            </span>
+                            <span>•</span>
+                            <span className="flex items-center gap-1">
+                              <Clock size={12} />
+                              {formatDuration(videoInfo.duration)}
+                            </span>
+                          </div>
+
+                          <div className="pt-1 flex items-center gap-2">
+                            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full inline-flex items-center gap-1 font-semibold">
+                              <Check size={11} /> Video Ready for Clipping
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Idle Placeholder / Guidance Card */
+                      <div className="w-full h-full min-h-[140px] rounded-xl border border-rule/50 bg-[#090b10]/60 p-4 flex flex-col items-center justify-center text-center space-y-2">
+                        <div className="w-10 h-10 rounded-xl bg-paper2/80 border border-rule flex items-center justify-center text-[#ba6238]">
+                          <Play size={18} className="fill-[#ba6238]/30 ml-0.5" />
+                        </div>
+                        <p className="text-xs text-muted max-w-xs leading-relaxed">
+                          Paste a video link and click <span className="text-ink font-semibold">Fetch Link</span> to preview the video thumbnail, duration, and metadata before generating shorts.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Platforms info footer */}
+                  <div className="flex items-center justify-between text-[11px] font-mono text-muted/70 pt-1 shrink-0">
+                    <span className="truncate">Supported: YouTube · Twitch · Kick · TikTok · Vimeo</span>
+                    <span className="text-[#ba6238] font-bold">HD 1080p Stream</span>
+                  </div>
+                </div>
+              ) : (
+                /* UPLOAD FILE MODE */
                 <div
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
-                  className={`flex-1 min-h-[220px] border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all ${
+                  className={`flex-1 min-h-[260px] border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all ${
                     file
                       ? 'border-[#ba6238] bg-[#ba6238]/10'
-                      : 'border-rule hover:border-[#ba6238]/60 bg-[#0e1015] hover:bg-paper2/40 group'
+                      : 'border-rule hover:border-[#ba6238]/60 bg-gradient-to-b from-[#141822] to-[#0c0e14] hover:from-[#191e2b] hover:to-[#0f121a] group'
                   }`}
                 >
                   <input
@@ -475,63 +738,39 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="flex-1 min-h-[220px] rounded-2xl border border-rule bg-[#0e1015] p-6 flex flex-col justify-center space-y-3">
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted block font-mono">
-                      Enter YouTube, Twitch, Kick, or direct video URL:
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="url"
-                        value={url}
-                        onChange={(e) => setUrl(e.target.value)}
-                        placeholder="https://www.youtube.com/watch?v=..."
-                        className="w-full bg-paper2 border border-rule focus:border-[#ba6238] rounded-xl py-3 pl-4 pr-10 text-sm text-ink placeholder:text-muted/60 focus:outline-none transition-colors"
-                      />
-                      {url && (
-                        <button
-                          type="button"
-                          onClick={() => setUrl('')}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink p-1 rounded hover:bg-paper3 transition-colors cursor-pointer"
-                        >
-                          <X size={15} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs pt-1">
-                    <span className="text-muted truncate pr-2">
-                      Supports YouTube, Twitch, Kick, Vimeo, TikTok
-                    </span>
-                    {navigator.clipboard && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const text = await navigator.clipboard.readText();
-                            if (text) setUrl(text);
-                          } catch (err) {
-                            // ignore
-                          }
-                        }}
-                        className="text-[#ba6238] hover:underline font-medium cursor-pointer shrink-0 font-mono"
-                      >
-                        Paste from clipboard
-                      </button>
-                    )}
-                  </div>
-                </div>
               )}
             </div>
           </div>
 
-          {/* Engine Status & Resolution Bar */}
-          <div className="flex items-center justify-between text-xs pt-2 border-t border-rule shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-mono text-muted text-xs">Engine Ready</span>
+          {/* Engine Status & Resolution Bar (Real-Time Live Check) */}
+          <div className="flex items-center justify-between text-xs pt-1.5 border-t border-rule shrink-0">
+            <div className="flex items-center gap-2" title={`Server Status: ${serverHealth.status}`}>
+              {serverHealth.status === 'ready' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-mono text-muted text-xs">Engine Ready</span>
+                </>
+              )}
+              {serverHealth.status === 'checking' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="font-mono text-muted text-xs">Checking Engine...</span>
+                </>
+              )}
+              {serverHealth.status === 'offline' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                  <span className="font-mono text-rose-400 font-semibold text-xs flex items-center gap-1">
+                    <AlertCircle size={12} /> Engine Offline
+                  </span>
+                </>
+              )}
+              {serverHealth.status === 'warning' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  <span className="font-mono text-amber-400 font-semibold text-xs">Engine Degraded</span>
+                </>
+              )}
             </div>
 
             <span className="font-mono text-muted text-xs">1080p · 60fps support</span>
@@ -542,7 +781,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
       {/* ========================================================= */}
       {/* BOTTOM FOOTER BAR: Optimized for short-form algorithms    */}
       {/* ========================================================= */}
-      <div className="pt-3 border-t border-rule flex flex-col sm:flex-row items-center justify-between gap-3 text-muted text-xs shrink-0">
+      <div className="pt-2.5 border-t border-rule flex flex-col sm:flex-row items-center justify-between gap-3 text-muted text-xs shrink-0">
         <span className="font-mono text-xs text-muted">
           Optimized for short-form algorithms:
         </span>
