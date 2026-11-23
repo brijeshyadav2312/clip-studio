@@ -50,10 +50,14 @@ export default function HistoryView({ jobs = [], onRefresh, onNavigateToGenerato
       const rawClips = Array.isArray(job.clips) ? job.clips : [];
 
       rawClips.forEach((clip) => {
-        if (!clip || typeof clip !== 'object' || !clip.filename) return;
+        if (!clip || typeof clip !== 'object') return;
+        const filename =
+          clip.filename ||
+          (clip.video ? clip.video.split('/').pop() : `${clip.slug || 'clip'}.mp4`);
 
         list.push({
           ...clip,
+          filename,
           jobId: job.id || 'job',
           jobTitle: job.title || job.url || 'Untitled Video',
           jobDate: dateFormatted,

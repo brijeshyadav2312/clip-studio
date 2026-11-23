@@ -72,22 +72,47 @@ def _job_path(job_id: str) -> Path:
     return path
 
 
+def _normalize_clips(job_id: str, clips: list[dict]) -> list[dict]:
+    normalized = []
+    for c in (clips or []):
+        if not isinstance(c, dict):
+            continue
+        c_copy = c.copy()
+        video_path = c.get("video") or ""
+        fname = c.get("filename") or (Path(video_path).name if video_path else f"{c.get('slug', 'clip')}.mp4")
+        c_copy["filename"] = fname
+        if "url" not in c_copy:
+            c_copy["url"] = f"/media/{job_id}/{video_path}" if video_path else f"/media/{job_id}/clips/{fname}"
+        if "srt_url" not in c_copy:
+            srt_path = c.get("srt") or (f"clips/{Path(fname).stem}.srt" if video_path else "")
+            c_copy["srt_url"] = f"/media/{job_id}/{srt_path}" if srt_path else ""
+        if "thumb_url" not in c_copy and c.get("thumb"):
+            c_copy["thumb_url"] = f"/media/{job_id}/{c.get('thumb')}"
+        normalized.append(c_copy)
+    return normalized
+
+
 def _read_job(job_id: str) -> dict:
+    data = None
     with LOCK:
         if job_id in JOB_CACHE:
-            return JOB_CACHE[job_id].copy()
-    path = _job_path(job_id) / "job.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Job not found")
-    try:
-        data = read_json(path)
-    except Exception as exc:
+            data = JOB_CACHE[job_id].copy()
+    if data is None:
+        path = _job_path(job_id) / "job.json"
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Job not found")
+        try:
+            data = read_json(path)
+        except Exception as exc:
+            with LOCK:
+                if job_id in JOB_CACHE:
+                    data = JOB_CACHE[job_id].copy()
+            if data is None:
+                raise HTTPException(status_code=500, detail=f"Failed to read job state: {exc}")
         with LOCK:
-            if job_id in JOB_CACHE:
-                return JOB_CACHE[job_id].copy()
-        raise HTTPException(status_code=500, detail=f"Failed to read job state: {exc}")
-    with LOCK:
-        JOB_CACHE[job_id] = data
+            JOB_CACHE[job_id] = data
+
+    data["clips"] = _normalize_clips(job_id, data.get("clips") or [])
     return data
 
 
@@ -189,9 +214,7 @@ def list_jobs() -> list[dict]:
                 continue
         if not data:
             continue
-        clips_data = data.get("clips")
-        if not isinstance(clips_data, list):
-            clips_data = []
+        clips_data = _normalize_clips(data.get("id", job_id), data.get("clips") or [])
         jobs.append({
             "id": data.get("id", job_id),
             "status": data.get("status", "unknown"),
@@ -409,15 +432,29 @@ def set_ai(req: AIConfigRequest):
 @app.delete("/api/jobs/{job_id}/clips/{filename}")
 def delete_clip(job_id: str, filename: str):
     path = _job_path(job_id)
-    clip_file = path / filename
-    if clip_file.exists():
-        clip_file.unlink(missing_ok=True)
-    srt_file = path / (Path(filename).stem + ".srt")
-    if srt_file.exists():
-        srt_file.unlink(missing_ok=True)
+    # Check both root and clips/ folder
+    for folder in (path, path / "clips"):
+        f1 = folder / filename
+        if f1.exists():
+            f1.unlink(missing_ok=True)
+        f2 = folder / (Path(filename).stem + ".srt")
+        if f2.exists():
+            f2.unlink(missing_ok=True)
+        f3 = folder / (Path(filename).stem + ".ass")
+        if f3.exists():
+            f3.unlink(missing_ok=True)
+        f4 = folder / (Path(filename).stem + ".jpg")
+        if f4.exists():
+            f4.unlink(missing_ok=True)
+
     with LOCK:
         job = _read_job(job_id)
-        job["clips"] = [c for c in job.get("clips", []) if c.get("filename") != filename]
+        job["clips"] = [
+            c for c in job.get("clips", [])
+            if c.get("filename") != filename
+            and Path(c.get("video", "")).name != filename
+            and c.get("slug") != Path(filename).stem
+        ]
         JOB_CACHE[job_id] = job
         write_json(path / "job.json", job)
     return {"ok": True, "deleted": filename}
