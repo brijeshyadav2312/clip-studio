@@ -97,6 +97,8 @@ def _run(job_id: str, settings: Settings, url: str | None, upload: Path | None,
 
     def on_report(status: str, pct: float, message: str, manifest: dict | None = None) -> None:
         with LOCK:
+            if job_id in JOB_CACHE and JOB_CACHE[job_id].get("status") == "cancelled":
+                return
             if manifest:
                 JOB_CACHE[job_id] = manifest.copy()
             elif job_id in JOB_CACHE:
@@ -187,6 +189,9 @@ def list_jobs() -> list[dict]:
                 continue
         if not data:
             continue
+        clips_data = data.get("clips")
+        if not isinstance(clips_data, list):
+            clips_data = []
         jobs.append({
             "id": data.get("id", job_id),
             "status": data.get("status", "unknown"),
@@ -194,7 +199,8 @@ def list_jobs() -> list[dict]:
             "message": data.get("message", ""),
             "title": data.get("title") or (data.get("source") or {}).get("title"),
             "created": data.get("created"),
-            "clips": len(data.get("clips") or []),
+            "clips": clips_data,
+            "clips_count": len(clips_data),
             "duration": (data.get("source") or {}).get("duration"),
         })
     return jobs
@@ -424,10 +430,11 @@ def cancel_job(job_id: str):
         if job_id in JOB_CACHE:
             JOB_CACHE[job_id]["status"] = "cancelled"
             JOB_CACHE[job_id]["message"] = "Cancelled by user"
-            JOB_CACHE.pop(job_id, None)
     if path.exists():
         try:
             pipeline.delete_job(path)
         except Exception:
             pass
+    with LOCK:
+        JOB_CACHE.pop(job_id, None)
     return {"ok": True, "cancelled": job_id}

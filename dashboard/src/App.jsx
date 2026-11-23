@@ -5,13 +5,16 @@ import ProcessingAnimation from './components/ProcessingAnimation';
 import HistoryView from './components/HistoryView';
 import AIConnectView from './components/AIConnectView';
 import SettingsView from './components/SettingsView';
+import ErrorBoundary from './components/ErrorBoundary';
+import NotFoundView from './components/NotFoundView';
 import { AlertCircle, Film, Sparkles, Cookie, Activity, X } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('generator'); // 'generator' | 'history' | 'aiconnect' | 'settings'
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Default sidebar position is LEFT as requested
   const [sidebarPosition, setSidebarPosition] = useState(
-    () => localStorage.getItem('clip_sidebar_pos') || 'right'
+    () => localStorage.getItem('clip_sidebar_pos') || 'left'
   );
 
   const [config, setConfig] = useState(null);
@@ -34,13 +37,13 @@ export default function App() {
   const fetchData = async () => {
     try {
       const [cfgRes, cookRes, jobsRes] = await Promise.all([
-        fetch('/api/config'),
-        fetch('/api/cookies'),
-        fetch('/api/jobs'),
+        fetch('/api/config').catch(() => null),
+        fetch('/api/cookies').catch(() => null),
+        fetch('/api/jobs').catch(() => null),
       ]);
-      if (cfgRes.ok) setConfig(await cfgRes.json());
-      if (cookRes.ok) setCookieStatus(await cookRes.json());
-      if (jobsRes.ok) {
+      if (cfgRes?.ok) setConfig(await cfgRes.json());
+      if (cookRes?.ok) setCookieStatus(await cookRes.json());
+      if (jobsRes?.ok) {
         const j = await jobsRes.json();
         setJobs(Array.isArray(j) ? j : []);
       }
@@ -52,7 +55,7 @@ export default function App() {
   useEffect(() => {
     fetchData();
 
-    // Check if an active job was running from localStorage
+    // Reconnect active job from localStorage if one was running
     const savedJobId = localStorage.getItem('clip_active_job');
     if (savedJobId) {
       pollJob(savedJobId);
@@ -62,6 +65,64 @@ export default function App() {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
   }, []);
+
+  // Determine stage from job status or message
+  const determineStage = (status, msg = '') => {
+    const m = msg.toLowerCase();
+    if (status === 'downloading' || m.includes('download')) return 'download';
+    if (status === 'transcribing' || m.includes('transcrib') || m.includes('whisper')) return 'transcribe';
+    if (status === 'ranking' || m.includes('ranking') || m.includes('highlight') || m.includes('ai')) return 'ranking';
+    if (status === 'rendering' || m.includes('render') || m.includes('crop') || m.includes('burn')) return 'rendering';
+    if (status === 'done') return 'done';
+    return 'system';
+  };
+
+  // Smart Log Handler: Fixed creation timestamp, in-place percentage updates, no duplicate rows
+  const updateStructuredLogs = (newStatus, newProgress, newMessage) => {
+    if (!newMessage) return;
+
+    const currentStage = determineStage(newStatus, newMessage);
+    const nowTime = new Date().toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    setLogs((prev) => {
+      const copy = [...prev];
+      const last = copy[copy.length - 1];
+
+      // Format progress text if available
+      const pctText = newProgress > 0 ? `${Math.round(newProgress)}%` : null;
+
+      // If the stage is the same as the previous log, update it in-place!
+      if (last && last.stage === currentStage) {
+        last.title = newMessage;
+        last.progress = newProgress;
+        last.progressText = pctText;
+        if (newStatus === 'done') last.status = 'completed';
+        return copy;
+      }
+
+      // If switching to a new stage, complete the previous log
+      if (last && last.status === 'running') {
+        last.status = 'completed';
+      }
+
+      // Create new structured log entry with fixed creation timestamp
+      const newEntry = {
+        id: `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        time: nowTime, // Fixed forever!
+        stage: currentStage,
+        title: newMessage,
+        progress: newProgress,
+        progressText: pctText,
+        status: newStatus === 'done' ? 'completed' : newStatus === 'error' ? 'error' : 'running',
+      };
+
+      return [...copy, newEntry];
+    });
+  };
 
   const pollJob = (jobId) => {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -84,19 +145,15 @@ export default function App() {
         const data = await res.json();
         setActiveJob(data);
 
-        if (data.message) {
-          setLogs((prev) => {
-            if (prev.length === 0 || prev[prev.length - 1] !== data.message) {
-              return [...prev.slice(-50), data.message];
-            }
-            return prev;
-          });
-        }
+        // Update logs with smart in-place percentage updates
+        updateStructuredLogs(data.status, data.progress || 0, data.message);
 
         if (data.status === 'done') {
           setIsProcessing(false);
           clearInterval(pollTimerRef.current);
           localStorage.removeItem('clip_active_job');
+          // Complete all remaining logs
+          setLogs((prev) => prev.map((l) => ({ ...l, status: 'completed' })));
           fetchData();
         } else if (data.status === 'error' || data.status === 'cancelled') {
           setIsProcessing(false);
@@ -104,6 +161,9 @@ export default function App() {
           localStorage.removeItem('clip_active_job');
           if (data.status === 'error') {
             setError(data.error || data.message || 'Job processing failed');
+            setLogs((prev) =>
+              prev.map((l, idx) => (idx === prev.length - 1 ? { ...l, status: 'error' } : l))
+            );
           }
           fetchData();
         }
@@ -118,7 +178,17 @@ export default function App() {
 
   const handleProcess = async ({ type, payload, options }) => {
     setError(null);
-    setLogs(['Submitting job to processor...']);
+    setLogs([
+      {
+        id: `init-${Date.now()}`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        stage: 'system',
+        title: 'Initializing video analysis pipeline...',
+        progress: 0,
+        progressText: null,
+        status: 'running',
+      },
+    ]);
     setIsProcessing(true);
 
     try {
@@ -152,7 +222,7 @@ export default function App() {
     }
   };
 
-  // Terminate active project on "+ new project" button click (as requested)
+  // Terminate active project on "+ new project" button click (clean state reset)
   const handleCancelProject = async () => {
     if (activeJob?.id) {
       try {
@@ -211,9 +281,11 @@ export default function App() {
     }
   };
 
+  const validTabs = ['generator', 'history', 'aiconnect', 'settings'];
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#0a0c10] text-ink font-sans">
-      {/* If sidebarPosition is 'left', render sidebar first */}
+      {/* If sidebarPosition is 'left' (DEFAULT), render sidebar first on the left */}
       {sidebarPosition === 'left' && (
         <Sidebar
           activeTab={activeTab}
@@ -228,46 +300,47 @@ export default function App() {
         />
       )}
 
-      {/* Main Content Area (Left side when sidebar is on right) */}
+      {/* Main Content Area */}
       <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
         {/* Subtle Top Status Bar */}
-        <header className="h-14 px-6 border-b border-rule bg-paper/80 backdrop-blur-md flex items-center justify-between shrink-0 z-20">
+        <header className="h-16 px-6 border-b border-rule bg-paper/80 backdrop-blur-md flex items-center justify-between shrink-0 z-20">
           <div className="flex items-center gap-3">
-            <span className="font-semibold text-ink text-sm tracking-tight">
+            <span className="font-semibold text-ink text-sm sm:text-base tracking-tight capitalize">
               {activeTab === 'generator' && (isProcessing || activeJob ? 'workbench' : 'generator')}
               {activeTab === 'history' && 'history'}
               {activeTab === 'aiconnect' && 'ai connect'}
               {activeTab === 'settings' && 'settings'}
+              {!validTabs.includes(activeTab) && 'page not found'}
             </span>
-            <span className="text-[10px] text-muted font-mono bg-paper3 px-2 py-0.5 rounded border border-rule">
-              OPENSHORTS ENGINE
+            <span className="text-[10.5px] text-muted font-mono bg-paper3 px-2 py-0.5 rounded border border-rule">
+              OPENSHORTS PRO
             </span>
           </div>
 
           <div className="flex items-center gap-3 text-xs">
             {cookieStatus?.has_cookies && (
-              <span className="pill pill-ok text-[10px] font-mono hidden sm:inline-flex items-center gap-1">
-                <Cookie size={11} /> cookies active
+              <span className="pill pill-ok text-xs font-mono hidden sm:inline-flex items-center gap-1.5 font-medium">
+                <Cookie size={13} /> cookies active
               </span>
             )}
             <span
               onClick={() => setActiveTab('aiconnect')}
-              className="pill pill-muted hover:border-brass/50 text-[10px] font-mono cursor-pointer flex items-center gap-1 transition-colors"
+              className="pill pill-muted hover:border-brass/50 text-xs font-mono cursor-pointer flex items-center gap-1.5 transition-colors font-medium"
               title="Click to configure AI engine"
             >
-              <Sparkles size={11} className="text-brass" />
+              <Sparkles size={13} className="text-brass" />
               <span>{config?.llm?.ready ? `AI: ${config.llm.provider}` : 'Local AI'}</span>
             </span>
           </div>
         </header>
 
-        {/* Scrollable View Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+        {/* Scrollable View Area wrapped in ErrorBoundary */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-7 custom-scrollbar">
           {/* Error Banner */}
           {error && (
-            <div className="max-w-2xl mx-auto mb-6 p-4 rounded-card bg-err/10 border border-err/30 text-err text-xs flex items-start justify-between gap-3 animate-fade shadow-lg">
-              <div className="flex items-start gap-2.5">
-                <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <div className="max-w-3xl mx-auto mb-6 p-4 sm:p-5 rounded-2xl bg-err/10 border border-err/30 text-err text-xs sm:text-sm flex items-start justify-between gap-3 animate-fade shadow-xl">
+              <div className="flex items-start gap-3">
+                <AlertCircle size={18} className="shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <span className="font-semibold block">Processing Issue</span>
                   <p className="leading-relaxed opacity-90">{error}</p>
@@ -276,68 +349,73 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setError(null)}
-                className="text-err/70 hover:text-err p-1 shrink-0"
+                className="text-err/70 hover:text-err p-1 rounded hover:bg-err/20 transition-colors shrink-0 cursor-pointer"
               >
-                <X size={14} />
+                <X size={16} />
               </button>
             </div>
           )}
 
-          {/* Tab 1: Clip Generator (Image 1 or Workbench Image 3) */}
-          {activeTab === 'generator' && (
-            <div>
-              {isProcessing || activeJob ? (
-                /* Workbench Mode (Matching Image 3) */
-                <ProcessingAnimation
-                  job={activeJob}
-                  logs={logs}
-                  onCancelProject={handleCancelProject}
-                  onDeleteClip={handleDeleteClip}
-                />
-              ) : (
-                /* Initial Generator Input Card (Matching Image 1) */
-                <MediaInput
-                  onProcess={handleProcess}
-                  isProcessing={isProcessing}
-                  onUploadCookies={handleUploadCookies}
-                  cookieStatus={cookieStatus}
-                />
-              )}
-            </div>
-          )}
+          <ErrorBoundary onReset={fetchData} onNavigateHome={() => setActiveTab('generator')}>
+            {/* Tab 1: Clip Generator (Initial Input or Active Workbench) */}
+            {activeTab === 'generator' && (
+              <div>
+                {isProcessing || activeJob ? (
+                  <ProcessingAnimation
+                    job={activeJob}
+                    logs={logs}
+                    onCancelProject={handleCancelProject}
+                    onDeleteClip={handleDeleteClip}
+                  />
+                ) : (
+                  <MediaInput
+                    onProcess={handleProcess}
+                    isProcessing={isProcessing}
+                    onUploadCookies={handleUploadCookies}
+                    cookieStatus={cookieStatus}
+                  />
+                )}
+              </div>
+            )}
 
-          {/* Tab 2: History (4 Clips per row grid, download, delete, preview) */}
-          {activeTab === 'history' && (
-            <HistoryView
-              jobs={jobs}
-              onRefresh={fetchData}
-              onNavigateToGenerator={() => setActiveTab('generator')}
-            />
-          )}
+            {/* Tab 2: History (1 Row 4 Clips Grid, Bulletproof Validation) */}
+            {activeTab === 'history' && (
+              <HistoryView
+                jobs={jobs}
+                onRefresh={fetchData}
+                onNavigateToGenerator={() => setActiveTab('generator')}
+              />
+            )}
 
-          {/* Tab 3: AI Connect (Gemini, OpenAI, Heuristic dropdown & keys) */}
-          {activeTab === 'aiconnect' && (
-            <AIConnectView
-              onAIUpdated={() => {
-                fetchData();
-              }}
-            />
-          )}
+            {/* Tab 3: AI Connect */}
+            {activeTab === 'aiconnect' && (
+              <AIConnectView
+                onAIUpdated={() => {
+                  fetchData();
+                }}
+              />
+            )}
 
-          {/* Tab 4: Settings (Hinglish/English/Hindi, Whisper, Stabilization, Cookies) */}
-          {activeTab === 'settings' && (
-            <SettingsView
-              cookieStatus={cookieStatus}
-              onUploadCookies={handleUploadCookies}
-              onDeleteCookies={handleDeleteCookies}
-              sidebarPosition={sidebarPosition}
-              setSidebarPosition={updateSidebarPosition}
-            />
-          )}
+            {/* Tab 4: Settings */}
+            {activeTab === 'settings' && (
+              <SettingsView
+                cookieStatus={cookieStatus}
+                onUploadCookies={handleUploadCookies}
+                onDeleteCookies={handleDeleteCookies}
+                sidebarPosition={sidebarPosition}
+                setSidebarPosition={updateSidebarPosition}
+              />
+            )}
+
+            {/* Fallback 404 Not Found Page */}
+            {!validTabs.includes(activeTab) && (
+              <NotFoundView onNavigateHome={() => setActiveTab('generator')} />
+            )}
+          </ErrorBoundary>
         </div>
       </main>
 
-      {/* If sidebarPosition is 'right', render sidebar on right (Requested) */}
+      {/* If sidebarPosition is 'right', render sidebar on right */}
       {sidebarPosition === 'right' && (
         <Sidebar
           activeTab={activeTab}

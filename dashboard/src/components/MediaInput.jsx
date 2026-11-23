@@ -15,6 +15,7 @@ import {
   Tv,
   Youtube,
   Instagram,
+  ArrowRight,
 } from 'lucide-react';
 
 export default function MediaInput({ onProcess, isProcessing, onUploadCookies, cookieStatus }) {
@@ -98,38 +99,38 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
   const canSubmit = (mode === 'upload' ? !!file : !!url.trim()) && rightsConfirmed;
 
   return (
-    <div className="w-full max-w-2xl mx-auto py-6 px-4">
-      <div className="card p-6 sm:p-8 shadow-2xl relative border border-rule2 bg-[#0e1015]/95 backdrop-blur-xl">
-        {/* Top Tabs (Matching Image 1: ↑ upload file | 🔗 video url) */}
-        <div className="flex gap-8 mb-6 border-b border-rule">
+    <div className="w-full max-w-3xl mx-auto py-8 px-4">
+      <div className="card p-7 sm:p-9 shadow-2xl relative border border-rule2 bg-[#0e1015]/95 backdrop-blur-2xl transition-all duration-300 rounded-2xl">
+        {/* Top Tabs (Matching Reference Image 1) */}
+        <div className="flex gap-8 mb-7 border-b border-rule">
           <button
             type="button"
             onClick={() => setMode('upload')}
-            className={`flex items-center gap-2 pb-3 px-1 -mb-px border-b-2 text-xs font-semibold lowercase tracking-wide transition-colors ${
+            className={`flex items-center gap-2.5 pb-3.5 px-1 -mb-px border-b-2 text-sm font-semibold lowercase tracking-wide transition-all duration-200 cursor-pointer ${
               mode === 'upload'
                 ? 'text-ink border-brass'
                 : 'text-muted border-transparent hover:text-ink2'
             }`}
           >
-            <Upload size={14} className={mode === 'upload' ? 'text-brass' : 'text-muted'} />
+            <Upload size={16} className={mode === 'upload' ? 'text-brass' : 'text-muted'} />
             <span>upload file</span>
           </button>
 
           <button
             type="button"
             onClick={() => setMode('url')}
-            className={`flex items-center gap-2 pb-3 px-1 -mb-px border-b-2 text-xs font-semibold lowercase tracking-wide transition-colors ${
+            className={`flex items-center gap-2.5 pb-3.5 px-1 -mb-px border-b-2 text-sm font-semibold lowercase tracking-wide transition-all duration-200 cursor-pointer ${
               mode === 'url'
                 ? 'text-ink border-brass'
                 : 'text-muted border-transparent hover:text-ink2'
             }`}
           >
-            <Link2 size={14} className={mode === 'url' ? 'text-brass' : 'text-muted'} />
+            <Link2 size={16} className={mode === 'url' ? 'text-brass' : 'text-muted'} />
             <span>video url</span>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-7">
           {/* Main Input Area */}
           {mode === 'upload' ? (
             <div>
@@ -137,10 +138,10 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-card p-10 flex flex-col items-center justify-center cursor-pointer transition-all ${
+                className={`border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center cursor-pointer transition-all duration-300 ${
                   file
-                    ? 'border-brass/60 bg-brass/5'
-                    : 'border-rule hover:border-brass/50 hover:bg-paper2/50'
+                    ? 'border-brass bg-brass/10 shadow-lg shadow-brass/5'
+                    : 'border-rule hover:border-brass/60 hover:bg-paper2/60 group'
                 }`}
               >
                 <input
@@ -156,13 +157,13 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                 />
 
                 {file ? (
-                  <div className="flex flex-col items-center text-center gap-2">
-                    <div className="w-12 h-12 rounded-full bg-brass/20 flex items-center justify-center text-brass">
-                      <FileVideo size={24} />
+                  <div className="flex flex-col items-center text-center gap-3 animate-fade">
+                    <div className="w-14 h-14 rounded-2xl bg-brass/20 border border-brass/40 flex items-center justify-center text-brass shadow-md">
+                      <FileVideo size={28} />
                     </div>
-                    <div className="font-medium text-ink text-sm max-w-sm truncate">{file.name}</div>
+                    <div className="font-semibold text-ink text-base max-w-md truncate">{file.name}</div>
                     <div className="readout text-muted text-xs">
-                      {(file.size / (1024 * 1024)).toFixed(1)} MB · Ready to process
+                      {(file.size / (1024 * 1024)).toFixed(1)} MB · Ready for AI clipping
                     </div>
                     <button
                       type="button"
@@ -170,18 +171,18 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                         e.stopPropagation();
                         setFile(null);
                       }}
-                      className="mt-2 text-xs text-brass hover:underline flex items-center gap-1"
+                      className="mt-2 text-xs text-brass hover:underline flex items-center gap-1.5 cursor-pointer font-medium"
                     >
-                      <X size={12} /> Choose another file
+                      <X size={13} /> Choose a different video file
                     </button>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center text-center gap-2.5">
-                    <div className="w-9 h-9 rounded-input border border-rule flex items-center justify-center text-muted mb-1 bg-paper2">
-                      <Upload size={16} />
+                  <div className="flex flex-col items-center text-center gap-3">
+                    <div className="w-12 h-12 rounded-xl border border-rule flex items-center justify-center text-muted group-hover:text-brass group-hover:border-brass/40 group-hover:scale-105 transition-all duration-200 bg-paper2 shadow-sm">
+                      <Upload size={20} />
                     </div>
-                    <p className="text-ink text-sm font-normal">click to upload or drag and drop</p>
-                    <p className="readout text-[10.5px] text-muted tracking-wider uppercase">
+                    <p className="text-ink text-base font-medium">click to upload or drag and drop</p>
+                    <p className="readout text-xs text-muted tracking-wider uppercase font-mono">
                       MP4, MOV UP TO 500MB · AT LEAST 45S LONG
                     </p>
                   </div>
@@ -189,27 +190,27 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
               </div>
             </div>
           ) : (
-            <div>
+            <div className="space-y-2">
               <div className="relative">
                 <input
                   type="url"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="Paste YouTube, Twitch, Kick, or direct video URL…"
-                  className="w-full bg-paper2 border border-rule focus:border-brass rounded-input py-3.5 pl-4 pr-10 text-sm text-ink placeholder:text-muted/60 focus:outline-none transition-colors"
+                  className="w-full bg-paper2 border border-rule focus:border-brass rounded-card py-4 pl-5 pr-12 text-sm sm:text-base text-ink placeholder:text-muted/60 focus:outline-none transition-all duration-200 shadow-inner"
                 />
                 {url && (
                   <button
                     type="button"
                     onClick={() => setUrl('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink p-1"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-ink p-1.5 rounded-input hover:bg-paper3 transition-colors cursor-pointer"
                   >
-                    <X size={14} />
+                    <X size={16} />
                   </button>
                 )}
               </div>
-              <div className="flex items-center justify-between mt-2 px-1">
-                <span className="text-[11px] text-muted">Supports YouTube, Twitch, Kick, Vimeo, TikTok, etc.</span>
+              <div className="flex items-center justify-between px-1 text-xs">
+                <span className="text-muted">Supports YouTube, Twitch, Kick, Vimeo, TikTok, etc.</span>
                 {navigator.clipboard && (
                   <button
                     type="button"
@@ -221,7 +222,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                         // ignore
                       }
                     }}
-                    className="text-[11px] text-brass hover:underline"
+                    className="text-brass hover:underline font-medium cursor-pointer"
                   >
                     paste from clipboard
                   </button>
@@ -230,92 +231,92 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
             </div>
           )}
 
-          {/* OUTPUT FORMAT Selection Cards (Matching Image 1: 9:16 | 1:1 | 16:9) */}
-          <div className="space-y-2.5 pt-1">
-            <label className="readout block text-center text-[10px] tracking-widest text-muted uppercase">
+          {/* OUTPUT FORMAT Selection Cards (Matching Reference Image 1) */}
+          <div className="space-y-3 pt-1">
+            <label className="readout block text-center text-xs tracking-widest text-muted uppercase font-mono">
               OUTPUT FORMAT
             </label>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-3.5">
               {/* 9:16 Card */}
               <button
                 type="button"
                 onClick={() => setAspect('9:16')}
-                className={`flex flex-col items-center justify-center p-4 rounded-input border transition-all text-center ${
+                className={`flex flex-col items-center justify-center p-4 sm:p-5 rounded-2xl border transition-all duration-200 text-center cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
                   aspect === '9:16'
-                    ? 'border-brass bg-brass/5 shadow-md shadow-brass/10'
+                    ? 'border-brass bg-brass/10 shadow-lg shadow-brass/15 ring-1 ring-brass/50'
                     : 'border-rule bg-paper2/50 hover:border-rule2 hover:bg-paper2'
                 }`}
               >
                 <div
-                  className={`w-5 h-8 border rounded-[3px] flex items-center justify-center mb-2.5 transition-colors ${
+                  className={`w-6 h-9 border-2 rounded-[4px] flex items-center justify-center mb-3 transition-colors ${
                     aspect === '9:16' ? 'border-brass' : 'border-muted'
                   }`}
                 >
                   <div
-                    className={`w-1 h-1 rounded-full ${
+                    className={`w-1.5 h-1.5 rounded-full ${
                       aspect === '9:16' ? 'bg-brass' : 'bg-muted'
                     }`}
                   />
                 </div>
                 <span
-                  className={`text-xs font-semibold block ${
+                  className={`text-sm font-semibold block tracking-wide ${
                     aspect === '9:16' ? 'text-brass' : 'text-ink'
                   }`}
                 >
                   9:16
                 </span>
-                <span className="text-[10px] text-muted block mt-0.5">Shorts · Reels · TikTok</span>
+                <span className="text-xs text-muted block mt-1">Shorts · Reels · TikTok</span>
               </button>
 
               {/* 1:1 Card */}
               <button
                 type="button"
                 onClick={() => setAspect('1:1')}
-                className={`flex flex-col items-center justify-center p-4 rounded-input border transition-all text-center ${
+                className={`flex flex-col items-center justify-center p-4 sm:p-5 rounded-2xl border transition-all duration-200 text-center cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
                   aspect === '1:1'
-                    ? 'border-brass bg-brass/5 shadow-md shadow-brass/10'
+                    ? 'border-brass bg-brass/10 shadow-lg shadow-brass/15 ring-1 ring-brass/50'
                     : 'border-rule bg-paper2/50 hover:border-rule2 hover:bg-paper2'
                 }`}
               >
                 <div
-                  className={`w-7 h-7 border rounded-[3px] flex items-center justify-center mb-2.5 transition-colors ${
+                  className={`w-8 h-8 border-2 rounded-[4px] flex items-center justify-center mb-3 transition-colors ${
                     aspect === '1:1' ? 'border-brass' : 'border-muted'
                   }`}
                 />
                 <span
-                  className={`text-xs font-semibold block ${
+                  className={`text-sm font-semibold block tracking-wide ${
                     aspect === '1:1' ? 'text-brass' : 'text-ink'
                   }`}
                 >
                   1:1
                 </span>
-                <span className="text-[10px] text-muted block mt-0.5">Feed posts</span>
+                <span className="text-xs text-muted block mt-1">Feed posts</span>
               </button>
 
               {/* 16:9 Card */}
               <button
                 type="button"
                 onClick={() => setAspect('16:9')}
-                className={`flex flex-col items-center justify-center p-4 rounded-input border transition-all text-center ${
+                className={`flex flex-col items-center justify-center p-4 sm:p-5 rounded-2xl border transition-all duration-200 text-center cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
                   aspect === '16:9'
-                    ? 'border-brass bg-brass/5 shadow-md shadow-brass/10'
+                    ? 'border-brass bg-brass/10 shadow-lg shadow-brass/15 ring-1 ring-brass/50'
                     : 'border-rule bg-paper2/50 hover:border-rule2 hover:bg-paper2'
                 }`}
               >
                 <div
-                  className={`w-8 h-5 border rounded-[3px] flex items-center justify-center mb-2.5 transition-colors ${
+                  className={`w-9 h-6 border-2 rounded-[4px] flex items-center justify-center mb-3 transition-colors ${
                     aspect === '16:9' ? 'border-brass' : 'border-muted'
                   }`}
                 />
                 <span
-                  className={`text-xs font-semibold block ${
+                  className={`text-sm font-semibold block tracking-wide ${
                     aspect === '16:9' ? 'text-brass' : 'text-ink'
                   }`}
                 >
                   16:9
                 </span>
-                <span className="text-[10px] text-muted block mt-0.5">Keep landscape · YouTube</span>
+                <span className="text-xs text-muted block mt-1">Keep landscape · YouTube</span>
               </button>
             </div>
           </div>
@@ -325,43 +326,43 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-1.5 text-xs text-muted hover:text-ink transition-colors font-mono"
+              className="flex items-center gap-2 text-xs font-mono text-muted hover:text-ink transition-colors cursor-pointer"
             >
               <ChevronDown
-                size={14}
-                className={`transition-transform duration-200 ${showAdvanced ? 'rotate-180' : ''}`}
+                size={15}
+                className={`transition-transform duration-300 ${showAdvanced ? 'rotate-180' : ''}`}
               />
               <span>advanced options</span>
             </button>
 
             {showAdvanced && (
-              <div className="mt-4 p-4 rounded-card border border-rule bg-paper2/60 space-y-4 animate-fade text-xs">
+              <div className="mt-4 p-5 rounded-2xl border border-rule bg-paper2/80 space-y-4 animate-fade text-xs">
                 {/* Row 1: Subtitle script & style */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-muted block mb-1">Subtitle Language / Script</label>
+                    <label className="text-muted block mb-1.5 font-medium">Subtitle Language / Script</label>
                     <select
                       value={subtitleScript}
                       onChange={(e) => setSubtitleScript(e.target.value)}
-                      className="w-full bg-paper border border-rule rounded-input p-2 text-ink focus:border-brass focus:outline-none"
+                      className="w-full bg-paper border border-rule rounded-input p-2.5 text-ink focus:border-brass focus:outline-none"
                     >
                       <option value="auto">Auto (Detect Hindi/English)</option>
-                      <option value="hinglish">Hinglish (Roman Script - Best for mix)</option>
+                      <option value="hinglish">Hinglish (Roman English script for Hindi/Mix)</option>
                       <option value="english">English (Strict English)</option>
                       <option value="hindi">Hindi (Devanagari)</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="text-muted block mb-1">Caption Animation Style</label>
+                    <label className="text-muted block mb-1.5 font-medium">Caption Animation Style</label>
                     <select
                       value={captionStyle}
                       onChange={(e) => setCaptionStyle(e.target.value)}
-                      className="w-full bg-paper border border-rule rounded-input p-2 text-ink focus:border-brass focus:outline-none"
+                      className="w-full bg-paper border border-rule rounded-input p-2.5 text-ink focus:border-brass focus:outline-none"
                     >
-                      <option value="wordpop">WordPop (Viral Highlight)</option>
-                      <option value="karaoke">Karaoke Gradient</option>
-                      <option value="minimal">Minimal Clean</option>
+                      <option value="wordpop">WordPop (Yellow dynamic pop)</option>
+                      <option value="karaoke">Karaoke (Gradient reveal)</option>
+                      <option value="minimal">Minimal (Clean subtitle strip)</option>
                       <option value="none">No Subtitles</option>
                     </select>
                   </div>
@@ -370,32 +371,32 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                 {/* Row 2: Camera framing & Clips count */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="text-muted block mb-1">Camera Stabilization</label>
+                    <label className="text-muted block mb-1.5 font-medium">Camera Stabilization</label>
                     <select
                       value={stabilization}
                       onChange={(e) => setStabilization(e.target.value)}
-                      className="w-full bg-paper border border-rule rounded-input p-2 text-ink focus:border-brass focus:outline-none"
+                      className="w-full bg-paper border border-rule rounded-input p-2.5 text-ink focus:border-brass focus:outline-none"
                     >
                       <option value="locked_tripod">Locked Tripod (Zero Jitter)</option>
                       <option value="smooth_pan">Smooth Dynamic Pan</option>
-                      <option value="disabled">Center Crop</option>
+                      <option value="disabled">Center Static Crop</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="text-muted block mb-1">Number of Clips: {numClips}</label>
+                    <label className="text-muted block mb-1.5 font-medium">Number of Clips: {numClips}</label>
                     <input
                       type="range"
                       min="1"
                       max="10"
                       value={numClips}
                       onChange={(e) => setNumClips(Number(e.target.value))}
-                      className="w-full accent-brass mt-2"
+                      className="w-full accent-brass mt-2 cursor-pointer"
                     />
                   </div>
 
                   <div>
-                    <label className="text-muted block mb-1">Max Duration: {maxSec}s</label>
+                    <label className="text-muted block mb-1.5 font-medium">Max Duration: {maxSec}s</label>
                     <input
                       type="range"
                       min="15"
@@ -403,71 +404,72 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                       step="5"
                       value={maxSec}
                       onChange={(e) => setMaxSec(Number(e.target.value))}
-                      className="w-full accent-brass mt-2"
+                      className="w-full accent-brass mt-2 cursor-pointer"
                     />
                   </div>
                 </div>
 
                 {/* Row 3: Custom Hook / Prompt */}
                 <div>
-                  <label className="text-muted block mb-1">Custom Highlight Prompt / Hook (Optional)</label>
+                  <label className="text-muted block mb-1.5 font-medium">Custom Highlight Prompt / Focus (Optional)</label>
                   <input
                     type="text"
                     value={hook}
                     onChange={(e) => setHook(e.target.value)}
                     placeholder="e.g. Focus on AI bubble discussion or high emotional moments…"
-                    className="w-full bg-paper border border-rule rounded-input p-2 text-ink focus:border-brass focus:outline-none"
+                    className="w-full bg-paper border border-rule rounded-input p-2.5 text-ink focus:border-brass focus:outline-none"
                   />
                 </div>
               </div>
             )}
           </div>
 
-          {/* Rights Confirmation Checkbox (Matching Image 1) */}
-          <div className="flex items-start gap-2.5 pt-1">
+          {/* Rights Confirmation Checkbox (Matching Reference Image 1) */}
+          <div className="flex items-start gap-3 pt-1">
             <input
               type="checkbox"
               id="rightsCheck"
               checked={rightsConfirmed}
               onChange={(e) => setRightsConfirmed(e.target.checked)}
-              className="mt-0.5 rounded border-rule text-brass focus:ring-0 focus:outline-none accent-brass cursor-pointer"
+              className="mt-1 w-4 h-4 rounded border-rule text-brass focus:ring-0 focus:outline-none accent-brass cursor-pointer"
             />
-            <label htmlFor="rightsCheck" className="text-[11px] text-muted leading-relaxed cursor-pointer select-none">
+            <label htmlFor="rightsCheck" className="text-xs text-muted leading-relaxed cursor-pointer select-none">
               I confirm I own this content or have the rights to process it. I am responsible for any content I submit.
               See our <span className="text-ink underline hover:text-brass">Terms</span> and{' '}
               <span className="text-ink underline hover:text-brass">Privacy Policy</span>.
             </label>
           </div>
 
-          {/* Terracotta / Burnt Copper Generate Clips Button (Matching Image 1) */}
+          {/* Terracotta / Burnt Copper Generate Clips Button (Matching Reference Image 1) */}
           <div>
             <button
               type="submit"
               disabled={!canSubmit || isProcessing}
-              className={`w-full py-3.5 px-6 rounded-card font-medium text-xs tracking-wider transition-all duration-200 lowercase shadow-lg ${
+              className={`w-full py-4 px-8 rounded-2xl font-semibold text-sm tracking-wider transition-all duration-300 lowercase shadow-xl flex items-center justify-center gap-2 ${
                 canSubmit && !isProcessing
-                  ? 'bg-gradient-to-r from-[#ba6238] via-[#a8522a] to-[#8d421e] text-white hover:brightness-110 active:scale-[0.99] shadow-[#a8522a]/25 cursor-pointer font-semibold'
+                  ? 'bg-gradient-to-r from-[#ba6238] via-[#a8522a] to-[#8d421e] text-white hover:brightness-110 hover:shadow-2xl hover:shadow-[#ba6238]/30 active:scale-[0.99] cursor-pointer'
                   : 'bg-paper3 text-muted border border-rule cursor-not-allowed opacity-60'
               }`}
             >
-              {isProcessing ? 'analyzing & generating clips…' : 'generate clips'}
+              <span>{isProcessing ? 'analyzing & generating clips…' : 'generate clips'}</span>
+              {!isProcessing && <ArrowRight size={16} />}
             </button>
           </div>
         </form>
       </div>
 
-      {/* Platform Icons (Matching Image 1 Bottom: YouTube | Instagram | TikTok) */}
-      <div className="flex items-center justify-center gap-8 mt-6 text-muted text-xs">
-        <div className="flex items-center gap-1.5 hover:text-ink transition-colors cursor-default">
-          <Youtube size={15} />
+      {/* Platform Icons (Matching Reference Image 1 Bottom: YouTube | Instagram | TikTok) */}
+      <div className="flex items-center justify-center gap-10 mt-8 text-muted text-xs sm:text-sm">
+        <div className="flex items-center gap-2 hover:text-ink transition-colors cursor-default">
+          <Youtube size={17} className="text-red-500" />
           <span>YouTube</span>
         </div>
-        <div className="flex items-center gap-1.5 hover:text-ink transition-colors cursor-default">
-          <Instagram size={14} />
+        <div className="flex items-center gap-2 hover:text-ink transition-colors cursor-default">
+          <Instagram size={16} className="text-pink-500" />
           <span>Instagram</span>
         </div>
-        <div className="flex items-center gap-1.5 hover:text-ink transition-colors cursor-default">
-          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+        <div className="flex items-center gap-2 hover:text-ink transition-colors cursor-default">
+          <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
             <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z" />
           </svg>
           <span>TikTok</span>
