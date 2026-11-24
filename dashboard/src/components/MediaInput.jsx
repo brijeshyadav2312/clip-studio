@@ -50,6 +50,9 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
   const [captionStyle, setCaptionStyle] = useState('wordpop');
   const [captionPosition, setCaptionPosition] = useState('auto');
   const [subtitleScript, setSubtitleScript] = useState('auto');
+  const [skipSponsors, setSkipSponsors] = useState(true);
+  const [forceAlign, setForceAlign] = useState(false);
+  const [whisperMinProb, setWhisperMinProb] = useState('0.25');
   const [whisperModel, setWhisperModel] = useState('base');
   const [cookiesFromBrowser, setCookiesFromBrowser] = useState('');
   const [streamerGameFocus, setStreamerGameFocus] = useState('center');
@@ -208,6 +211,11 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
       caption_position: captionPosition,
       subtitle_script: subtitleScript,
       whisper_model: whisperModel,
+      force_align: forceAlign,
+      whisper_min_prob: Number(whisperMinProb) || 0.25,
+      skip_sponsors: skipSponsors,
+      sponsor_categories: "sponsor,selfpromo,intro,outro,interaction,music_offtopic",
+      sponsor_overlap_limit: 0.30,
       cookies_from_browser: cookiesFromBrowser,
       streamer_game_focus: streamerGameFocus,
       streamer_split_ratio: streamerSplitRatio,
@@ -386,6 +394,63 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                         <option value="english">English (Strict English)</option>
                         <option value="hindi">Hindi (Devanagari)</option>
                       </select>
+                    </div>
+
+                    {/* Sponsor / ad skip + transcription precision options */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="flex items-center gap-2 p-2.5 rounded-xl border border-rule bg-[#0a0c10]">
+                        <input
+                          id="skipSponsors"
+                          type="checkbox"
+                          checked={skipSponsors}
+                          onChange={(e) => setSkipSponsors(e.target.checked)}
+                          className="w-4 h-4 rounded border-rule text-[#ba6238] focus:ring-0 focus:outline-none accent-[#ba6238] cursor-pointer shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <label className="text-xs sm:text-sm font-medium text-ink block truncate leading-snug">
+                            Skip sponsor / promo segments (SponsorBlock)
+                          </label>
+                          <span className="text-[10px] text-muted block mt-0.5 truncate">
+                            YouTube only: avoids ad reads, intros, outros &amp; self-promos
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 p-2.5 rounded-xl border border-rule bg-[#0a0c10]">
+                        <input
+                          id="forceAlign"
+                          type="checkbox"
+                          checked={forceAlign}
+                          onChange={(e) => setForceAlign(e.target.checked)}
+                          className="w-4 h-4 rounded border-rule text-[#ba6238] focus:ring-0 focus:outline-none accent-[#ba6238] cursor-pointer shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <label className="text-xs sm:text-sm font-medium text-ink block truncate leading-snug">
+                            Force precise timestamp alignment (stable-ts)
+                          </label>
+                          <span className="text-[10px] text-muted block mt-0.5 truncate">
+                            Sub-100ms caption sync (needs stable-ts installed)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-muted block mb-1 font-mono text-[11px] truncate">
+                          Min ASR Confidence
+                        </label>
+                        <select
+                          value={whisperMinProb}
+                          onChange={(e) => setWhisperMinProb(e.target.value)}
+                          className="w-full bg-[#0a0c10] border border-rule rounded-xl p-2.5 text-xs text-ink focus:border-[#ba6238] focus:outline-none cursor-pointer"
+                        >
+                          <option value="0.25">0.25 · Balanced (drops gibberish)</option>
+                          <option value="0.0">0.00 · Keep every word</option>
+                          <option value="0.4">0.40 · Strict (cleaner captions)</option>
+                        </select>
+                        <span className="text-[10px] text-muted block mt-0.5 truncate">
+                          Drop low-confidence Whisper words that cause symbol captions
+                        </span>
+                      </div>
                     </div>
 
                     <div>

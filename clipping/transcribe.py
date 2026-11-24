@@ -1,7 +1,15 @@
-"""Speech-to-text with word-level timestamps (faster-whisper, CPU friendly)."""
+"""Speech-to-text with word-level timestamps (faster-whisper, CPU friendly).
+
+Improvements over raw Whisper output:
+  * word-level probability filtering (drop low-confidence garbage words)
+  * timestamp sanitization (monotonic, min/max duration, gap repair)
+  * script/garbage cleanup (drop repeated symbols, meaningless fragments)
+  * optional stable-ts forced-alignment refinement for sub-100ms sync
+"""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -11,6 +19,13 @@ from .utils import ToolError, log, read_json, run, write_json
 Progress = Callable[[float, str], None]
 
 _MODEL_CACHE: dict[tuple[str, str, str], object] = {}
+
+# A "word" that is mostly symbols / punctuation / garbage is meaningless as a caption.
+_SYMBOL_ONLY = re.compile(r"^[\W_]+$")
+# Repeated punctuation runs like "!!!", "???", "....", "^^^".
+_REPEATED_SYMBOLS = re.compile(r"([\W_])\1{3,}")
+# A token that is pure garbage after normalization (e.g. leftover Urdu codepoints).
+_GARBAGE_TOKEN = re.compile(r"^[^\w\s]{2,}$")
 
 # Transliteration mappings for script consistency
 DEV_VOWELS = {
@@ -108,6 +123,160 @@ def normalize_script_word(word: str, mode: str = "auto") -> str:
             res.append(c)
         i += 1
     return f"{prefix}{''.join(res)}{suffix}"
+
+
+def _clean_word_text(text: str) -> str:
+    """Remove garbage / meaningless symbols from a single word.
+
+    - Collapse runs of repeated punctuation (``!!!`` -> ``!``)
+    - Drop tokens that are purely symbols
+    - Strip surrounding quotes, brackets, and markdown symbols while preserving interior
+      apostrophes and natural sentence-ending punctuation (.,!?) so highlights sentence
+      boundaries and terminal snapping work properly.
+    """
+    if not text:
+        return ""
+    t = _REPEATED_SYMBOLS.sub(r"\1", text).strip()
+    if not t:
+        return ""
+    # Pure-symbol token -> meaningless.
+    if _SYMBOL_ONLY.match(t) or _GARBAGE_TOKEN.match(t):
+        return ""
+    # Strip quotes, brackets, and markdown wrappers.
+    t = t.strip("\"'()[]{}<>~`*_#")
+    # Strip leading punctuation runs like ",word" or "-word"
+    t = t.lstrip(".,!?:;-")
+    return t
+
+
+def _sanitize_words(words: list[dict], min_prob: float) -> list[dict]:
+    """Filter and clean word-level timestamps.
+
+    Rules:
+      * drop words below the ASR probability threshold
+      * drop garbage / symbol-only tokens
+      * enforce monotonic start times (repair tiny backwards steps)
+      * clamp each word to [min 0.08s, max 3.0s] duration
+      * remove exact-duplicate words
+    """
+    cleaned: list[dict] = []
+    last_end = -1.0
+    seen = set()
+    for w in words:
+        prob = float(w.get("probability", 1.0))
+        if prob < min_prob:
+            continue
+        text = _clean_word_text(w.get("word", ""))
+        if not text:
+            continue
+        start = float(w["start"])
+        end = float(w["end"])
+        if end <= start:
+            end = start + 0.08
+        # Monotonic repair: never go backwards in time.
+        if start < last_end - 0.02:
+            start = last_end
+            if end <= start:
+                end = start + 0.08
+        # Clamp duration.
+        if end - start > 3.0:
+            end = start + 3.0
+        if end - start < 0.08:
+            end = start + 0.08
+        key = (round(start, 3), text.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append({
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "word": text,
+            "probability": round(prob, 3),
+        })
+        last_end = end
+    return cleaned
+
+
+def _sanitize_segments(segments: list[dict]) -> list[dict]:
+    """Ensure segment boundaries are sane and segment text matches its words."""
+    clean: list[dict] = []
+    last_end = -1.0
+    for seg in segments:
+        words = seg.get("words") or []
+        if not words:
+            continue
+        text = " ".join(w["word"] for w in words).strip()
+        if not text:
+            continue
+        start = max(0.0, float(words[0]["start"]))
+        end = max(start + 0.1, float(words[-1]["end"]))
+        # Monotonic segment repair.
+        if start < last_end - 0.05:
+            start = last_end
+            if end <= start:
+                end = start + 0.1
+        clean.append({
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "text": text,
+            "words": words,
+        })
+        last_end = end
+    return clean
+
+
+def _maybe_force_align(audio: Path, transcript: dict, settings: Settings) -> dict:
+    """Optionally refine word timestamps with stable-ts forced alignment.
+
+    stable-ts re-aligns the transcript against the audio signal, fixing Whisper's
+    native timestamp drift (~1s) down to sub-100ms. Only runs when
+    ``CLIP_FORCE_ALIGN=1`` and stable-ts is installed; otherwise the transcript is
+    returned unchanged.
+    """
+    if not settings.force_align:
+        return transcript
+    try:
+        import stable_whisper  # type: ignore
+    except ImportError:
+        log("[asr] CLIP_FORCE_ALIGN=1 but stable-ts is not installed; using Whisper native timestamps")
+        return transcript
+
+    try:
+        model = stable_whisper.load_faster_whisper_model(
+            settings.whisper_model,
+            device=settings.whisper_device if settings.whisper_device != "auto" else "cpu",
+            compute_type=settings.whisper_compute,
+        )
+        result = model.align(
+            transcript,
+            str(audio),
+        )
+        # stable_whisper returns a Result object; convert back to our dict shape.
+        segments = []
+        for seg in result.segments:
+            words = []
+            for w in seg.words or []:
+                words.append({
+                    "start": round(float(w.start), 3),
+                    "end": round(float(w.end), 3),
+                    "word": str(w.word),
+                    "probability": round(float(w.probability), 3),
+                })
+            text = " ".join(w["word"] for w in words).strip() or seg.text
+            segments.append({
+                "start": round(float(seg.start), 3),
+                "end": round(float(seg.end), 3),
+                "text": text,
+                "words": words,
+            })
+        data = dict(transcript)
+        data["segments"] = _sanitize_segments(segments)
+        data["aligned"] = True
+        log(f"[asr] stable-ts alignment complete ({len(segments)} segments)")
+        return data
+    except Exception as exc:
+        log(f"[asr] stable-ts alignment failed ({exc}); using Whisper native timestamps")
+        return transcript
 
 
 def _device(settings: Settings) -> str:
@@ -221,6 +390,7 @@ def transcribe(
 
     total = float(getattr(info, "duration", 0.0) or 0.0)
     segments: list[dict] = []
+    min_prob = float(getattr(settings, "whisper_min_prob", 0.25) or 0.25)
     for seg in segments_iter:
         words = []
         for w in seg.words or []:
@@ -228,7 +398,12 @@ def transcribe(
             if not text:
                 continue
             text = normalize_script_word(text, mode=mode)
-            words.append({"start": round(float(w.start), 3), "end": round(float(w.end), 3), "word": text})
+            words.append({
+                "start": round(float(w.start), 3),
+                "end": round(float(w.end), 3),
+                "word": text,
+                "probability": round(float(getattr(w, "probability", 1.0) or 1.0), 3),
+            })
         seg_text = " ".join(w["word"] for w in words) if words else normalize_script_word((seg.text or "").strip(), mode=mode)
         if not seg_text:
             continue
@@ -240,6 +415,11 @@ def transcribe(
         })
         if progress and total:
             progress(min(99.0, float(seg.end) / total * 100.0), f"Transcribing {float(seg.end) / total * 100:.0f}%")
+
+    # Clean + sanitize: drop low-confidence/garbage words, repair monotonic timestamps.
+    for seg in segments:
+        seg["words"] = _sanitize_words(seg["words"], min_prob)
+    segments = _sanitize_segments(segments)
 
     if not segments:
         raise ToolError(
@@ -253,10 +433,13 @@ def transcribe(
         "duration": total or segments[-1]["end"],
         "model": settings.whisper_model,
         "segments": segments,
+        "aligned": False,
     }
+    # Optional forced-alignment refinement (fixes Whisper timestamp drift).
+    data = _maybe_force_align(audio, data, settings)
     write_json(cache, data)
-    words = sum(len(s["words"]) for s in segments)
-    log(f"[asr] {len(segments)} segments, {words} words, language={data['language']}")
+    words = sum(len(s["words"]) for s in data["segments"])
+    log(f"[asr] {len(data['segments'])} segments, {words} words, language={data['language']}, aligned={data.get('aligned', False)}")
     if progress:
         progress(100.0, "Transcription done")
     return data

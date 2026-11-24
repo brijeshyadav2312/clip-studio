@@ -16,11 +16,23 @@ from typing import Iterable
 
 from .config import Settings
 from .llm import complete_json, log_provider, provider_available
+from .sponsorblock import overlaps_skip
 from .utils import clamp, log, slug
 from .transcribe import transcript_text
 
 WINDOW_SEC = 480.0
 WINDOW_OVERLAP = 30.0
+
+# Strong sentence-terminal punctuation. Clips ending here feel "complete".
+TERMINAL = (".", "!", "?", "…", '"', "”", "’")
+# A clip that starts with one of these is almost always mid-thought / filler.
+WEAK_OPENERS = (
+    "so", "and", "but", "yeah", "okay", "um", "uh", "like", "right", "well",
+    "you know", "i mean", "basically", "actually", "anyway", "right",
+)
+# Pronouns / demonstratives that make no sense without prior context.
+CONTEXT_DEPS = {"they", "it", "this", "that", "these", "those", "he", "she", "its", "his", "her", "them"}
+
 
 SYSTEM_PROMPT = """You are a senior short-form video editor who cuts podcasts, interviews \
 and tutorials into viral YouTube Shorts, TikToks and Instagram Reels.
@@ -71,6 +83,20 @@ def _fmt(seconds: float) -> str:
     return f"{seconds // 3600:02d}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
 
 
+def _ends_on_terminal(text: str) -> bool:
+    return bool(text) and text.strip()[-1:] in TERMINAL
+
+
+def _starts_weak(text: str) -> bool:
+    t = text.strip()
+    if not t:
+        return True
+    first = t.split(" ", 1)[0].lower().strip(",.\"'")
+    if first in WEAK_OPENERS or first in CONTEXT_DEPS:
+        return True
+    return t[:1].islower()
+
+
 def _words_in(segments: list[dict], start: float, end: float) -> list[dict]:
     out: list[dict] = []
     for seg in segments:
@@ -101,7 +127,11 @@ def _trim_to_words(start: float, end: float, segments: list[dict], min_sec: floa
 def _snap_to_segments(
     start: float, end: float, segments: list[dict], settings: Settings
 ) -> tuple[float, float] | None:
-    """Grow/shrink a raw clip onto whole transcript segments (sentence-ish units)."""
+    """Grow/shrink a raw clip onto whole transcript segments (sentence-ish units).
+
+    Prefers starting on a fresh thought and ending on a sentence terminal so the
+    clip feels self-contained instead of mid-sentence.
+    """
     if end <= start:
         return None
     first = None
@@ -114,11 +144,13 @@ def _snap_to_segments(
     if first is None or last is None or last < first:
         return None
 
-    # Never start on a dangling connector.
+    # Never start on a dangling connector / pronoun / weak opener.
     filler = ("so", "and", "but", "yeah", "okay", "um", "uh", "like", "right")
     while last > first:
         head = segments[first]["text"].strip().lower()
         if any(head.startswith(f + " ") or head == f for f in filler) and len(segments[first]["text"]) < 90:
+            first += 1
+        elif _starts_weak(segments[first]["text"]) and len(segments[first]["text"]) < 90:
             first += 1
         else:
             break
@@ -126,12 +158,20 @@ def _snap_to_segments(
     start_t = segments[first]["start"]
     end_t = segments[last]["end"]
 
+    # Try to end on a sentence terminal for a complete feeling.
+    if last > first and not _ends_on_terminal(segments[last]["text"]):
+        for k in range(last, first, -1):
+            if _ends_on_terminal(segments[k]["text"]):
+                end_t = segments[k]["end"]
+                last = k
+                break
+
     # Grow to the minimum length.
     while end_t - start_t < settings.min_sec and last + 1 < len(segments):
         last += 1
         end_t = segments[last]["end"]
 
-    # Shrink to the maximum length.
+    # Shrink to the maximum length, preferring to cut at a sentence terminal.
     while end_t - start_t > settings.max_sec and last > first:
         last -= 1
         end_t = segments[last]["end"]
@@ -186,7 +226,8 @@ def _windows(segments: list[dict]) -> list[list[dict]]:
     return windows
 
 
-def _llm_clips(transcript: dict, settings: Settings, progress=None) -> list[dict]:
+def _llm_clips(transcript: dict, settings: Settings, progress=None,
+               skip_segments: list[dict] | None = None) -> list[dict]:
     segments = transcript["segments"]
     windows = _windows(segments)
     per_window = max(2, math.ceil(settings.num_clips / max(1, len(windows))) + 1)
@@ -223,6 +264,13 @@ def _llm_clips(transcript: dict, settings: Settings, progress=None) -> list[dict
             if not snapped:
                 continue
             start, end = snapped
+
+            # Never return a clip that sits inside a sponsor / promo segment.
+            if skip_segments:
+                tainted, _cat = overlaps_skip(start, end, skip_segments, limit=settings.sponsor_overlap_limit)
+                if tainted:
+                    continue
+
             title = str(item.get("title") or "").strip()
             hook = str(item.get("hook") or "").strip()
             try:
@@ -276,6 +324,16 @@ def _score_window(text: str, duration: float, settings: Settings) -> float:
     if "!" in text:
         score += 2.0
 
+    # Completeness: a clip that ends on a full thought feels self-contained.
+    if _ends_on_terminal(text):
+        score += 4.0
+    elif text.strip().endswith(","):
+        score -= 3.0
+
+    # Information density: numbers + proper-noun-like words suggest concrete content.
+    info_density = len(re.findall(r"\d", text)) + len(re.findall(r"\b[A-Z][a-z]+\b", text))
+    score += clamp((info_density - 3) * 1.0, -3.0, 6.0)
+
     # Energy: words per second of speech.
     wps = len(words) / max(1.0, duration)
     score += clamp((wps - 2.2) * 8.0, -6.0, 8.0)
@@ -290,11 +348,15 @@ def _score_window(text: str, duration: float, settings: Settings) -> float:
     delta = abs(duration - settings.target_sec)
     score -= min(12.0, delta * 0.35)
 
-    # Weak openings.
+    # Weak openings / mid-thought starts.
     head = " ".join(words[:4])
     if re.match(r"^(so|and|but|yeah|okay|um|uh|like|right|well)\b", head):
         score -= 6.0
-    if re.search(r"\b(subscribe|sponsor|patreon|link in the description|like and)\b", lower):
+    if _starts_weak(text):
+        score -= 8.0
+
+    # Promo / housekeeping language.
+    if re.search(r"\b(subscribe|sponsor|patreon|link in the description|like and|hit the bell|check out my)\b", lower):
         score -= 20.0
 
     return clamp(score, 1.0, 99.0)
@@ -340,7 +402,8 @@ def _boundary_scores(segments: list[dict]) -> tuple[list[float], list[float]]:
     return start_bonus, end_bonus
 
 
-def _heuristic_clips(transcript: dict, settings: Settings, progress=None) -> list[dict]:
+def _heuristic_clips(transcript: dict, settings: Settings, progress=None,
+                     skip_segments: list[dict] | None = None) -> list[dict]:
     segments = transcript["segments"]
     log("[rank] scoring windows heuristically")
     start_bonus, end_bonus = _boundary_scores(segments)
@@ -353,11 +416,19 @@ def _heuristic_clips(transcript: dict, settings: Settings, progress=None) -> lis
                 continue
             if duration > settings.max_sec:
                 break
+            start, end = segments[i]["start"], segments[j]["end"]
+
+            # Skip clips that sit inside a sponsor / promo segment.
+            if skip_segments:
+                tainted, _cat = overlaps_skip(start, end, skip_segments, limit=settings.sponsor_overlap_limit)
+                if tainted:
+                    continue
+
             text = " ".join(s["text"] for s in segments[i : j + 1]).strip()
             score = _score_window(text, duration, settings) + start_bonus[i] + end_bonus[j]
             candidates.append({
-                "start": segments[i]["start"],
-                "end": segments[j]["end"],
+                "start": start,
+                "end": end,
                 "duration": round(duration, 2),
                 "score": int(clamp(score, 1, 99)),
                 "title": _title_from(text),
@@ -424,7 +495,8 @@ def _hook_from(text: str) -> str:
 
 # ------------------------------------------------------------------ public
 
-def select_clips(transcript: dict, settings: Settings, progress=None) -> list[dict]:
+def select_clips(transcript: dict, settings: Settings, progress=None,
+                 skip_segments: list[dict] | None = None) -> list[dict]:
     duration = float(transcript.get("duration") or 0.0)
     segments = transcript.get("segments") or []
     if not segments:
@@ -433,6 +505,11 @@ def select_clips(transcript: dict, settings: Settings, progress=None) -> list[di
     # Short sources: the whole thing is the clip.
     if duration <= max(settings.max_sec, 90):
         start, end = segments[0]["start"], segments[-1]["end"]
+        # Even a short source should not be a sponsor read.
+        if skip_segments:
+            tainted, _cat = overlaps_skip(start, end, skip_segments, limit=settings.sponsor_overlap_limit)
+            if tainted:
+                return []
         text = " ".join(s["text"] for s in segments)
         clips = [{
             "start": round(start, 3),
@@ -448,7 +525,7 @@ def select_clips(transcript: dict, settings: Settings, progress=None) -> list[di
         clips = []
         if provider_available(settings):
             try:
-                clips = _llm_clips(transcript, settings, progress)
+                clips = _llm_clips(transcript, settings, progress, skip_segments=skip_segments)
             except Exception as exc:
                 log(f"[llm] ranking failed, falling back to heuristic: {exc}")
                 clips = []
@@ -456,9 +533,16 @@ def select_clips(transcript: dict, settings: Settings, progress=None) -> list[di
         if len(clips) < max(1, settings.num_clips // 2):
             if progress:
                 progress(50.0, "Ranking highlights (heuristic)")
-            clips += _heuristic_clips(transcript, settings, progress)
+            clips += _heuristic_clips(transcript, settings, progress, skip_segments=skip_segments)
 
         clips = _dedupe(clips, settings.num_clips)
+
+    # Final defense-in-depth: drop any clip still overlapping a skip segment.
+    if skip_segments:
+        before = len(clips)
+        clips = [c for c in clips if not overlaps_skip(c["start"], c["end"], skip_segments, limit=settings.sponsor_overlap_limit)[0]]
+        if before != len(clips):
+            log(f"[rank] dropped {before - len(clips)} clip(s) overlapping sponsor segments")
 
     for i, clip in enumerate(clips, 1):
         clip["id"] = f"clip{i:02d}"

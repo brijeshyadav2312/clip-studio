@@ -1,7 +1,14 @@
-"""Animated word-level captions rendered as ASS (burned in by ffmpeg/libass)."""
+"""Animated word-level captions rendered as ASS (burned in by ffmpeg/libass).
+
+Hardened against:
+  * overflowing the frame (hard line/char limits, long-word splitting)
+  * meaningless symbol/garbage captions
+  * out-of-order or zero-duration word timings
+"""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .config import Settings
@@ -38,8 +45,12 @@ Style: Hook,{font},72,&H00FFFFFF,&H00FFFFFF,&H00000000,&H99000000,-1,0,0,0,100,1
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
+_SYMBOL_ONLY = re.compile(r"^[\W_]{1,}$")
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
 
 def _escape(text: str) -> str:
+    text = _CONTROL_CHARS.sub(" ", text)
     return (
         text.replace("\\", "/")
         .replace("{", "(")
@@ -50,16 +61,24 @@ def _escape(text: str) -> str:
     )
 
 
+def _split_long_word(word: str, max_chars: int) -> list[str]:
+    """Split a word longer than max_chars so it never overflows a single line."""
+    if len(word) <= max_chars:
+        return [word]
+    return [word[i:i + max_chars] for i in range(0, len(word), max_chars)]
+
+
 def _wrap(words: list[str], max_chars: int) -> list[str]:
     lines: list[str] = []
     current = ""
     for word in words:
-        candidate = f"{current} {word}".strip()
-        if current and len(candidate) > max_chars:
-            lines.append(current)
-            current = word
-        else:
-            current = candidate
+        for piece in _split_long_word(word, max_chars):
+            candidate = f"{current} {piece}".strip() if current else piece
+            if current and len(candidate) > max_chars:
+                lines.append(current)
+                current = piece
+            else:
+                current = candidate
     if current:
         lines.append(current)
     return lines[:3] or [""]
@@ -105,17 +124,33 @@ def build(
     for word in words:
         if word["end"] <= clip_start or word["start"] >= clip_end:
             continue
-        text = _escape(word["word"])
+        raw = word.get("word", "")
+        if not raw or _SYMBOL_ONLY.match(raw.strip()):
+            continue
+        text = _escape(raw)
         if not text:
             continue
         if censor and text.lower().strip(".,!?") in PROFANITY:
             text = text[0] + "*" * max(2, len(text) - 1)
+        start = max(0.0, float(word["start"]) - clip_start)
+        end = max(0.0, min(clip_duration, float(word["end"]) - clip_start))
+        if end <= start:
+            end = min(clip_duration, start + 0.08)
         local.append({
-            "start": max(0.0, word["start"] - clip_start),
-            "end": max(0.0, min(clip_duration, word["end"] - clip_start)),
+            "start": round(start, 3),
+            "end": round(end, 3),
             "word": text,
             "muted": censor and word["word"].lower().strip(".,!?") in PROFANITY,
         })
+
+    # Drop zero-length groups and de-duplicate identical adjacent words.
+    deduped: list[dict] = []
+    for w in local:
+        if deduped and deduped[-1]["word"] == w["word"] and abs(deduped[-1]["end"] - w["start"]) < 0.02:
+            deduped[-1]["end"] = w["end"]
+            continue
+        deduped.append(w)
+    local = deduped
 
     muted = [(w["start"], w["end"]) for w in local if w.get("muted")]
 

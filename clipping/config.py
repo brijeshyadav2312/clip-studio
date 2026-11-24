@@ -101,6 +101,20 @@ class Settings:
     whisper_device: str = os.getenv("WHISPER_DEVICE", "auto")
     whisper_compute: str = os.getenv("WHISPER_COMPUTE", "int8")
     whisper_threads: int = _int("WHISPER_THREADS", max(1, (os.cpu_count() or 4) - 1))
+    # Optional forced-alignment refinement (stable-ts) for sub-100ms word timestamps.
+    # Set to "1" to enable when stable-ts is installed; falls back to Whisper native timestamps otherwise.
+    force_align: bool = os.getenv("CLIP_FORCE_ALIGN", "0") == "1"
+    # Drop words whose ASR probability is below this (0.0 = keep everything).
+    whisper_min_prob: float = _float("WHISPER_MIN_PROB", "0.25")
+
+    # Sponsor / ad skipping (YouTube via SponsorBlock public API).
+    skip_sponsors: bool = os.getenv("CLIP_SKIP_SPONSORS", "1") == "1"
+    sponsor_categories: str = os.getenv(
+        "CLIP_SPONSOR_CATEGORIES",
+        "sponsor,selfpromo,intro,outro,interaction,music_offtopic",
+    )
+    # When a clip would overlap a skipped segment by more than this fraction, drop it.
+    sponsor_overlap_limit: float = _float("CLIP_SPONSOR_OVERLAP_LIMIT", "0.30")
 
     # Highlight ranking
     llm_provider: str = field(default_factory=lambda: (
@@ -152,6 +166,11 @@ class Settings:
             "caption_position": self.caption_position,
             "subtitle_script": self.subtitle_script,
             "whisper_model": self.whisper_model,
+            "force_align": self.force_align,
+            "whisper_min_prob": self.whisper_min_prob,
+            "skip_sponsors": self.skip_sponsors,
+            "sponsor_categories": self.sponsor_categories,
+            "sponsor_overlap_limit": self.sponsor_overlap_limit,
             "llm_provider": self.llm_provider,
             "cookies_from_browser": self.cookies_from_browser,
             "cookie_file": self.cookie_file,

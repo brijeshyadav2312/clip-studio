@@ -87,6 +87,11 @@ class JobRequest(BaseModel):
     caption_position: str | None = None
     subtitle_script: str | None = None
     whisper_model: str | None = None
+    force_align: bool | None = None
+    whisper_min_prob: float | None = None
+    skip_sponsors: bool | None = None
+    sponsor_categories: str | None = None
+    sponsor_overlap_limit: float | None = None
     cookies_from_browser: str | None = None
     cookie_file: str | None = None
     censor: bool = False
@@ -394,9 +399,13 @@ def _start(settings: Settings, url: str | None, upload: Path | None,
 
 @app.get("/")
 def index():
-    if (DIST_DIR / "index.html").exists():
-        return FileResponse(DIST_DIR / "index.html")
-    return FileResponse(STATIC_DIR / "index.html")
+    # Serve the React Vite dashboard (built to static/dist by `vite build`).
+    if not (DIST_DIR / "index.html").exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Frontend not built. Run `vite build` in the dashboard folder.",
+        )
+    return FileResponse(DIST_DIR / "index.html")
 
 
 @app.get("/api/config")
@@ -503,6 +512,11 @@ def create_job(req: JobRequest) -> dict:
         caption_position=req.caption_position,
         subtitle_script=req.subtitle_script,
         whisper_model=req.whisper_model,
+        force_align=req.force_align,
+        whisper_min_prob=req.whisper_min_prob,
+        skip_sponsors=req.skip_sponsors,
+        sponsor_categories=req.sponsor_categories,
+        sponsor_overlap_limit=req.sponsor_overlap_limit,
     )
     job_id = _start(settings, url, None, req.hook, req.censor, req.title)
     return {"id": job_id}
@@ -529,6 +543,11 @@ async def create_upload_job(
     caption_position: str | None = Form(default=None),
     subtitle_script: str | None = Form(default=None),
     whisper_model: str | None = Form(default=None),
+    force_align: bool | None = Form(default=None),
+    whisper_min_prob: float | None = Form(default=None),
+    skip_sponsors: bool | None = Form(default=None),
+    sponsor_categories: str | None = Form(default=None),
+    sponsor_overlap_limit: float | None = Form(default=None),
     censor: bool = Form(default=False),
     hook: str | None = Form(default=None),
     title: str | None = Form(default=None),
@@ -569,6 +588,11 @@ async def create_upload_job(
         caption_position=caption_position,
         subtitle_script=subtitle_script,
         whisper_model=whisper_model,
+        force_align=force_align,
+        whisper_min_prob=whisper_min_prob,
+        skip_sponsors=skip_sponsors,
+        sponsor_categories=sponsor_categories,
+        sponsor_overlap_limit=sponsor_overlap_limit,
     )
     job_id = _start(settings, None, tmp, hook, censor, title or file.filename)
     return {"id": job_id, "duration": info["duration"]}
@@ -632,6 +656,37 @@ class AIConfigRequest(BaseModel):
     openai_api_key: str | None = None
     gemini_model: str | None = None
     openai_model: str | None = None
+
+
+@app.get("/v1/models")
+def list_models():
+    """OpenAI-compatible models endpoint.
+
+    Some browser extensions / AI tooling probe for ``/v1/models`` expecting an
+    OpenAI-shaped response. Return our configured providers so callers get a
+    proper 200 instead of a 404.
+    """
+    cfg = load_ai_config()
+    settings = Settings()
+    models = []
+    if settings.gemini_api_key or cfg.get("gemini_api_key"):
+        models.append({
+            "id": settings.gemini_model,
+            "object": "model",
+            "owned_by": "google",
+        })
+    if settings.openai_api_key or cfg.get("openai_api_key"):
+        models.append({
+            "id": settings.openai_model,
+            "object": "model",
+            "owned_by": "openai",
+        })
+    models.append({
+        "id": "heuristic",
+        "object": "model",
+        "owned_by": "local",
+    })
+    return {"object": "list", "data": models}
 
 
 @app.post("/api/ai")

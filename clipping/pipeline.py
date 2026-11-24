@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 from typing import Callable
 
-from . import captions, highlights, ingest, reframe, render, transcribe
+from . import captions, highlights, ingest, reframe, render, sponsorblock, transcribe
 from .config import DATA_DIR, Settings
 from .utils import ToolError, log, read_json, video_info, write_json
 
@@ -119,6 +119,19 @@ def process(
             "thumbnail": thumb_link,
             "video_url": f"/media/{job_dir.name}/{source.name}" if source.exists() else "",
         }
+
+        # 1b. Sponsor / promo skip segments (SponsorBlock, YouTube only).
+        skip_segments: list[dict] = []
+        if settings.skip_sponsors and url:
+            vid = sponsorblock.video_id_from_url(meta.get("webpage_url") or url or "")
+            if vid:
+                skip_segments = sponsorblock.fetch_skip_segments(
+                    vid, categories=settings.sponsor_categories
+                )
+                manifest["skip_segments"] = skip_segments
+        if skip_segments:
+            log(f"[pipeline] {len(skip_segments)} sponsor/promo segment(s) will be avoided")
+
         save("transcribing", 10, "Reading media")
 
         # 2. Transcribe -----------------------------------------------------
@@ -133,6 +146,7 @@ def process(
         clips = highlights.select_clips(
             transcript, settings,
             progress=lambda pct, msg: save("ranking", 46 + pct * 0.08, msg),
+            skip_segments=skip_segments,
         )
         if not clips:
             raise ToolError("No usable clips were found in this video.")

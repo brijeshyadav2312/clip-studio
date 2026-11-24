@@ -112,7 +112,19 @@ class FaceDetector:
 
 
 class SpeakerTracker:
-    """Stabilizes podcast multi-speaker framing with dwell hysteresis."""
+    """Stabilizes subject framing for vertical reframing.
+
+    Key design decisions (from AutoFlip / OpusClip subject-tracking research):
+      * Track ONE subject at a time. Never average two faces -- that centers the
+        crop in the gap between people and cuts both of them off.
+      * Main character = largest, most confident face (closest to camera gets
+        the biggest area weight), with a mild horizontal center bias.
+      * Temporal persistence: hold the current speaker unless a clearly more
+        prominent face is present for a sustained dwell window. Prevents
+        jittery ping-pong when two people trade short lines.
+      * Gentle exponential pull toward the current face center to kill micro
+        jitter while still following real movement.
+    """
 
     def __init__(self, dwell_sec: float = 2.5, sample_fps: float = SAMPLE_FPS):
         self.dwell_frames = max(4, int(dwell_sec * sample_fps))
@@ -121,54 +133,65 @@ class SpeakerTracker:
         self.candidate_count: int = 0
         self.lost_frames: int = 0
 
+    def _score_face(
+        self,
+        face: tuple[int, int, int, int, float],
+        src_w: float,
+    ) -> float:
+        """Prominence score for a single face.
+
+        Larger / closer faces dominate (main character). A gentle center bias
+        prefers the face nearer the frame midline, which is usually the subject.
+        """
+        x, y, w, h, score = face
+        area = float(w * h)
+        cx = x + w / 2.0
+        center_bias = 1.0 - abs(cx - src_w / 2.0) / max(src_w / 2.0, 1.0)
+        # area * confidence, blended with center bias (70% size, 30% center)
+        return area * float(score) * (0.70 + 0.30 * center_bias)
+
     def update(
         self,
         faces: list[tuple[int, int, int, int, float]],
         crop_w_src: float,
         src_w: float,
     ) -> float | None:
+        """Return the best single subject's horizontal center (source pixels)."""
         if not faces:
             self.lost_frames += 1
-            # Hold active center during short dropouts (up to ~1.5s)
-            if self.lost_frames < int(1.5 * SAMPLE_FPS) and self.active_center is not None:
+            # Hold the last subject through brief dropouts (~1.5s) so a blink or
+            # momentary occlusion doesn't yank the crop away.
+            hold = int(1.5 * SAMPLE_FPS)
+            if self.lost_frames < hold and self.active_center is not None:
                 return self.active_center
             return None
 
         self.lost_frames = 0
 
-        # Check if all faces can fit within 90% of the vertical crop width
-        min_x = min(f[0] for f in faces)
-        max_x = max(f[0] + f[2] for f in faces)
-        if (max_x - min_x) <= crop_w_src * 0.90:
-            target = (min_x + max_x) / 2.0
-            self.active_center = target
+        # Pick the single most prominent face -- never average multiple faces.
+        best = max(faces, key=lambda f: self._score_face(f, src_w))
+        top_center = best[0] + best[2] / 2.0
+
+        # If the dominant face is very large, it's a solo main character: lock tight.
+        if best[2] * best[3] > (src_w * src_w) * 0.06:
             self.candidate_center = None
             self.candidate_count = 0
-            return target
-
-        # Sort faces by prominence (area * score)
-        prominent = sorted(faces, key=lambda f: (f[2] * f[3]) * f[4], reverse=True)
-        top_face = prominent[0]
-        top_center = top_face[0] + top_face[2] / 2.0
 
         if self.active_center is None:
             self.active_center = top_center
             return self.active_center
 
-        # Check if current active center is still occupied by a detected face
-        current_face = min(faces, key=lambda f: abs((f[0] + f[2] / 2.0) - self.active_center))
-        dist_to_current = abs((current_face[0] + current_face[2] / 2.0) - self.active_center)
-
-        # If current speaker is still present within reasonable bounds (e.g. 150px)
-        if dist_to_current < 160:
-            # Gentle micro-anchor on current speaker (avoiding jitter)
-            self.active_center = 0.90 * self.active_center + 0.10 * (current_face[0] + current_face[2] / 2.0)
-            self.candidate_count = 0
+        # Current speaker still present nearby? Stay on them with a gentle pull.
+        dist_to_current = abs(top_center - self.active_center)
+        if dist_to_current < 200:
+            self.active_center = 0.88 * self.active_center + 0.12 * top_center
             self.candidate_center = None
+            self.candidate_count = 0
             return self.active_center
 
-        # If another speaker is prominent, require sustained presence before switching
-        if self.candidate_center is None or abs(top_center - self.candidate_center) > 120:
+        # A different, prominent face appeared -- require sustained presence
+        # before switching speakers (avoids flicker on short interjections).
+        if self.candidate_center is None or abs(top_center - self.candidate_center) > 110:
             self.candidate_center = top_center
             self.candidate_count = 1
         else:
@@ -176,7 +199,6 @@ class SpeakerTracker:
             self.candidate_center = 0.85 * self.candidate_center + 0.15 * top_center
 
         if self.candidate_count >= self.dwell_frames:
-            # Switch to new speaker
             self.active_center = self.candidate_center
             self.candidate_center = None
             self.candidate_count = 0
@@ -191,6 +213,7 @@ def _resample_and_smooth(
     center_x: float,
     fps: float = PATH_FPS,
     stabilization: str = "locked_tripod",
+    scene_changes: list[float] | None = None,
 ) -> list[tuple[float, float]]:
     """Turn sparse detections into a rock-solid, stabilized camera path.
 
@@ -199,83 +222,105 @@ def _resample_and_smooth(
         wobbles, breathing, or micro-movements. Tripod feel.
       - smooth_cinematic: 25px deadband with slow, damped pans.
       - dynamic: 15px deadband for fast-action content.
+
+    ``scene_changes`` are hard-cut timestamps. The path is processed per segment so
+    the crop can jump instantly at a cut instead of drifting across an unrelated
+    scene into a graph or different speaker.
     """
     import numpy as np
 
+    scene_changes = scene_changes or []
     ts = np.array([t for t, _ in raw], dtype=float)
     vals = np.array([np.nan if v is None else v for _, v in raw], dtype=float)
 
     if np.isnan(vals).all():
-        vals = np.full_like(vals, center_x)
+        interpolated = np.full_like(vals, center_x)
     else:
         index = np.arange(len(vals))
         good = ~np.isnan(vals)
-        vals = np.interp(index, index[good], vals[good])
-
-    count = max(2, int(duration * fps) + 2)
-    grid = np.arange(count, dtype=float) / fps
-    path = np.interp(grid, ts, vals)
-
-    # Median filter (window 7) removes dropouts and sudden single-frame spikes
-    window = 7
-    padded = np.pad(path, window // 2, mode="edge")
-    path = np.median(np.lib.stride_tricks.sliding_window_view(padded, window), axis=1)
+        interpolated = np.interp(index, index[good], vals[good])
 
     # Stabilization parameters
     if stabilization == "locked_tripod":
-        deadband = 42.0          # pixels in scaled space (~13px at 1080p)
-        max_vel = 480.0          # px/s - slow cinematic pan
-        follow_gain = 4.5
-        tau_target = 0.40
-        tau_vel = 0.25
+        deadband, max_vel, follow_gain, tau_target, tau_vel = 42.0, 480.0, 4.5, 0.40, 0.25
     elif stabilization == "smooth_cinematic":
-        deadband = 26.0
-        max_vel = 650.0
-        follow_gain = 6.0
-        tau_target = 0.25
-        tau_vel = 0.18
+        deadband, max_vel, follow_gain, tau_target, tau_vel = 26.0, 650.0, 6.0, 0.25, 0.18
     else:  # dynamic
-        deadband = 16.0
-        max_vel = 1200.0
-        follow_gain = 9.0
-        tau_target = 0.12
-        tau_vel = 0.12
+        deadband, max_vel, follow_gain, tau_target, tau_vel = 16.0, 1200.0, 9.0, 0.12, 0.12
 
     dt = 1.0 / fps
     alpha = 1.0 - math.exp(-dt / tau_target)
     vel_alpha = 1.0 - math.exp(-dt / tau_vel)
+    window = 7
 
-    cam = float(path[0])
-    target = float(path[0])
-    velocity = 0.0
-    out: list[tuple[float, float]] = []
+    def _smooth_chunk(t0: float, t1: float) -> list[tuple[float, int]]:
+        """Smooth one scene-contiguous chunk [t0, t1]; returns stabilized (t, x) samples."""
+        if t1 <= t0:
+            return []
+        count = max(2, int((t1 - t0) * fps) + 2)
+        grid = np.arange(count, dtype=float) / fps
+        grid = grid[grid <= (t1 - t0 + 1e-6)]
+        if grid.size == 0:
+            grid = np.array([0.0])
+        # Interpolate chunk values onto the local grid (offset by chunk start).
+        path = np.interp(grid + t0, ts, interpolated)
+        # Median filter removes dropouts / spikes.
+        if path.size >= window:
+            padded = np.pad(path, window // 2, mode="edge")
+            path = np.median(
+                np.lib.stride_tricks.sliding_window_view(padded, window), axis=1
+            )
 
-    for i, sample in enumerate(path):
-        target += alpha * (float(sample) - target)
-        error = target - cam
+        cam = float(path[0])
+        target = float(path[0])
+        velocity = 0.0
+        out: list[tuple[float, int]] = []
+        for g, sample in zip(grid, path):
+            target += alpha * (float(sample) - target)
+            error = target - cam
+            if abs(error) < deadband:
+                desired_vel = 0.0
+                velocity *= 0.85
+            else:
+                effective_error = error - math.copysign(deadband * 0.7, error)
+                desired_vel = clamp(follow_gain * effective_error, -max_vel, max_vel)
+            velocity += vel_alpha * (desired_vel - velocity)
+            cam += velocity * dt
+            if cam <= 0.0:
+                cam = 0.0
+                velocity = 0.0
+            elif cam >= max_x:
+                cam = max_x
+                velocity = 0.0
+            out.append((round(t0 + float(g), 3), int(round(cam / 2.0) * 2)))
+        return out
 
-        # Deadband: if error is within threshold, zero out movement (tripod lock)
-        if abs(error) < deadband:
-            desired_vel = 0.0
-            velocity *= 0.85     # rapid decay to full halt
+    # Split at scene changes so the crop jumps at hard cuts instead of drifting across them.
+    breaks = [0.0]
+    for sc in scene_changes:
+        if 0.0 < sc < duration:
+            breaks.append(sc)
+    breaks.append(duration)
+    breaks = sorted(set(breaks))
+
+    samples: list[tuple[float, int]] = []
+    for b_i in range(len(breaks) - 1):
+        samples.extend(_smooth_chunk(breaks[b_i], breaks[b_i + 1]))
+
+    # Deduplicate / clamp to [0, duration] and ensure monotonic time.
+    samples = sorted(samples, key=lambda p: p[0])
+    deduped: list[tuple[float, int]] = []
+    for t, x in samples:
+        if t > duration + 1e-6:
+            continue
+        if deduped and abs(t - deduped[-1][0]) < 1e-6:
+            deduped[-1] = (t, x)
         else:
-            # Active pan towards target with soft-shoulder speed limit
-            effective_error = error - math.copysign(deadband * 0.7, error)
-            desired_vel = clamp(follow_gain * effective_error, -max_vel, max_vel)
+            deduped.append((t, x))
+    return deduped
 
-        velocity += vel_alpha * (desired_vel - velocity)
-        cam += velocity * dt
 
-        if cam <= 0.0:
-            cam = 0.0
-            velocity = 0.0
-        elif cam >= max_x:
-            cam = max_x
-            velocity = 0.0
 
-        out.append((i / fps, int(round(cam / 2.0) * 2)))
-
-    return out
 
 
 def _detect_corner_webcam(
@@ -415,7 +460,14 @@ def _compute_streamer_crops(
 
 
 def detect_wide_content(small_frame) -> bool:
-    """Detect if on-screen text, title cards, slides, or graphics extend into the 9:16 margins."""
+    """Detect if on-screen text, title cards, slides, or graphics extend into the 9:16 margins.
+
+    Combines three signals so we don't miss graphs/charts/slides:
+      * Canny edge density in the left/right margins (typography strokes, diagrams)
+      * Gray-level variance in the margins (buttons, cards, boxes, arrows)
+      * Saturation / colour variance (infographics often use flat brand colours)
+    Returns True when the content spills outside what a centred 9:16 crop would show.
+    """
     import cv2
     import numpy as np
 
@@ -423,24 +475,100 @@ def detect_wide_content(small_frame) -> bool:
     gray = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY) if len(small_frame.shape) == 3 else small_frame
     crop_w = int(h * (9.0 / 16.0))
     margin_w = max(10, (w - crop_w) // 2)
+    if margin_w <= 0:
+        return False
 
-    # Canny edges tuned for typography strokes, diagrams, vector shapes, and borders
+    # 1) Edge density in the outer margins (typography strokes, diagram lines).
     edges = cv2.Canny(gray, 30, 100)
+    left_density = float(np.count_nonzero(edges[:, :margin_w])) / float(h * margin_w)
+    right_density = float(np.count_nonzero(edges[:, w - margin_w:])) / float(h * margin_w)
 
-    left_margin = edges[:, :margin_w]
-    right_margin = edges[:, w - margin_w:]
-    margin_area = float(h * margin_w)
+    # 2) Variance in the margins (non-uniform boxes/cards/arrows).
+    left_var = float(np.var(gray[:, :margin_w]))
+    right_var = float(np.var(gray[:, w - margin_w:]))
 
-    left_density = np.count_nonzero(left_margin) / margin_area
-    right_density = np.count_nonzero(right_margin) / margin_area
+    # 3) Colour saturation variance (infographics / brand slides pop in colour).
+    hsv = cv2.cvtColor(small_frame, cv2.COLOR_BGR2HSV) if len(small_frame.shape) == 3 else None
+    sat_var = 0.0
+    if hsv is not None:
+        sat = hsv[:, :, 1].astype(np.float32)
+        left_sat = float(np.var(sat[:, :margin_w]))
+        right_sat = float(np.var(sat[:, w - margin_w:]))
+        sat_var = max(left_sat, right_sat)
 
-    # Also detect non-uniformity (buttons, boxes, cards, arrows) in outer margins
-    left_gray = gray[:, :margin_w]
-    right_gray = gray[:, w - margin_w:]
-    left_var = float(np.var(left_gray))
-    right_var = float(np.var(right_gray))
+    wide = (
+        left_density > 0.0022 or right_density > 0.0022 or
+        left_var > 130 or right_var > 130 or
+        sat_var > 900
+    )
+    return bool(wide)
 
-    return bool(left_density > 0.0025 or right_density > 0.0025 or left_var > 140 or right_var > 140)
+
+def detect_text_regions(small_frame) -> list[tuple[float, float, float, float]]:
+    """Find approximate on-screen text regions as normalized [x0, y0, x1, y1] in [0,1].
+
+    Uses MSER (Maximally Stable Extremal Regions) which is tuned to catch
+    stable text-like blobs, plus a threshold pass for high-contrast captions.
+    Returns a list of bounding boxes; caller decides how to use them.
+    """
+    import cv2
+    import numpy as np
+
+    h, w = small_frame.shape[:2]
+    gray = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY) if len(small_frame.shape) == 3 else small_frame
+    regions: list[tuple[float, float, float, float]] = []
+
+    try:
+        mser = cv2.MSER_create(_delta=3, _min_area=25, _max_area=h * w * 0.30)
+        bboxes, _ = mser.detectRegions(gray)
+        for (x, y, fw, fh) in bboxes:
+            # Text-like: wider than tall, not huge, not a single pixel line.
+            if fw < 8 or fh < 6:
+                continue
+            if fh > fw * 3.0:  # tall thin strokes aren't words
+                continue
+            regions.append((x / w, y / h, (x + fw) / w, (y + fh) / h))
+    except Exception:
+        pass
+
+    # Merge overlapping / neighbouring boxes into a few coarse zones.
+    if not regions:
+        return regions
+    zones: list[list[float]] = []
+    for x0, y0, x1, y1 in sorted(regions):
+        placed = False
+        for zone in zones:
+            if x0 <= zone[2] + 0.05 and zone[0] <= x1 + 0.05 and y0 <= zone[3] + 0.05 and zone[1] <= y1 + 0.05:
+                zone[0] = min(zone[0], x0)
+                zone[1] = min(zone[1], y0)
+                zone[2] = max(zone[2], x1)
+                zone[3] = max(zone[3], y1)
+                placed = True
+                break
+        if not placed:
+            zones.append([x0, y0, x1, y1])
+    return [(z[0], z[1], z[2], z[3]) for z in zones]
+
+
+def detect_scene_changes(samples_gray: list, fps: float = 30.0, threshold: float = 0.35) -> list[float]:
+    """Detect hard cuts between consecutive downsampled frames.
+
+    Returns timestamps (seconds) where a scene change occurs, so the crop path
+    can be reset instead of drifting across an unrelated cut.
+    """
+    import numpy as np
+
+    changes: list[float] = []
+    if len(samples_gray) < 2:
+        return changes
+    prev = None
+    for i, g in enumerate(samples_gray):
+        if prev is not None:
+            diff = float(np.mean(np.abs(g.astype(np.float32) - prev.astype(np.float32)))) / 255.0
+            if diff > threshold:
+                changes.append(i / fps)
+        prev = g
+    return changes
 
 
 def _find_landscape_intervals(samples: list[tuple[float, bool]], min_dur: float = 0.8) -> list[tuple[float, float]]:
@@ -527,6 +655,11 @@ def plan(
     hits = 0
     wide_hits = 0
     frames = 0
+    # Per-frame text zones (normalized [x0,y0,x1,y1]) so the crop can protect on-screen text.
+    text_zones: list[list[tuple[float, float, float, float]]] = []
+    # Downsampled grayscale frames for scene-change detection.
+    gray_samples: list = []
+    scene_changes: list[float] = []
 
     try:
         import cv2
@@ -569,6 +702,15 @@ def plan(
             if is_wide:
                 wide_hits += 1
 
+            # Capture text/graph regions so the crop window can be biased to include them.
+            zones = detect_text_regions(small) if is_wide else []
+            text_zones.append(zones)
+
+            # Downsampled grayscale for scene-change detection.
+            g = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+            g = cv2.resize(g, (160, 90), interpolation=cv2.INTER_AREA)
+            gray_samples.append(g)
+
             faces = [
                 (int(fx * factor), int(fy * factor), int(fw * factor), int(fh * factor), score)
                 for (fx, fy, fw, fh, score) in detector.detect(small)
@@ -585,7 +727,16 @@ def plan(
                 x = clamp(center_src * scale - crop_w / 2.0, 0.0, max_x)
                 raw.append((t, x))
             else:
-                raw.append((t, None))
+                # No face: if on-screen text/graph was detected, bias the crop to
+                # keep it inside the 9:16 window instead of centering blindly.
+                x = None
+                if text_zones and text_zones[-1]:
+                    # Use the largest text zone (most likely the headline/graph).
+                    zone = max(text_zones[-1], key=lambda z: (z[2] - z[0]) * (z[3] - z[1]))
+                    tx = (zone[0] + zone[2]) / 2.0  # normalized center in source frame
+                    text_center_src = tx * src_w
+                    x = clamp(text_center_src * scale - crop_w / 2.0, 0.0, max_x)
+                raw.append((t, x))
 
             if t >= duration:
                 break
@@ -606,6 +757,10 @@ def plan(
     face_ratio = hits / frames if frames else 0.0
     wide_ratio = wide_hits / frames if frames else 0.0
     corner_cam = _detect_corner_webcam(all_detections, src_w, src_h)
+
+    # Scene changes: reset the crop path at hard cuts so we never drift across an
+    # unrelated cut into a graph or different speaker.
+    scene_changes = detect_scene_changes(gray_samples, fps=SAMPLE_FPS)
 
     # Dynamic landscape intervals: detect segments where graphics, slides, or B-roll appear
     landscape_intervals = _find_landscape_intervals(landscape_samples, min_dur=0.8)
@@ -691,8 +846,11 @@ def plan(
                 "reason": f"Auto-detected streamer webcam in {streamer_crops['corner']}",
             }
 
-        # B. Pure Presentation / Full Slide / 100% Graph video (predominantly landscape visuals or minimal faces)
-        if landscape_ratio >= 0.70 or face_ratio < 0.15:
+        # B. Pure Presentation / Full Slide / 100% Graph video.
+        # Only letterbox when faces are essentially absent and the clip is dominated
+        # by wide visuals -- a 16:9 graph cannot fit 9:16 without cropping it off,
+        # so preserving it full-frame (fit_blur) is the lesser evil.
+        if landscape_ratio >= 0.60 and face_ratio < 0.08:
             log(
                 f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s full presentation/graph video "
                 f"(landscape: {landscape_ratio*100:.0f}%, faces: {face_ratio*100:.0f}%) -> fit_blur"
@@ -716,6 +874,7 @@ def plan(
                 raw, duration, max_x, center_x,
                 fps=PATH_FPS,
                 stabilization=settings.stabilization,
+                scene_changes=scene_changes,
             )
             log(
                 f"[reframe] {clip_start:.1f}s-{clip_end:.1f}s dynamic reframing: "
@@ -738,6 +897,7 @@ def plan(
         raw, duration, max_x, center_x,
         fps=PATH_FPS,
         stabilization=settings.stabilization,
+        scene_changes=scene_changes,
     )
 
     log(
