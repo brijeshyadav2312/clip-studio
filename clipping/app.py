@@ -85,6 +85,13 @@ class JobRequest(BaseModel):
     streamer_bg: str | None = None
     streamer_theme: str | None = None
     caption_position: str | None = None
+    caption_font: str | None = None
+    caption_font_size: int | None = Field(default=None, ge=20, le=200)
+    caption_primary_color: str | None = None
+    caption_active_color: str | None = None
+    caption_outline: int | None = Field(default=None, ge=0, le=12)
+    caption_uppercase: bool | None = None
+    caption_margin_v: int | None = Field(default=None, ge=0, le=500)
     subtitle_script: str | None = None
     whisper_model: str | None = None
     force_align: bool | None = None
@@ -510,6 +517,13 @@ def create_job(req: JobRequest) -> dict:
         streamer_bg=req.streamer_bg,
         streamer_theme=req.streamer_theme,
         caption_position=req.caption_position,
+        caption_font=req.caption_font,
+        caption_font_size=req.caption_font_size,
+        caption_primary_color=req.caption_primary_color,
+        caption_active_color=req.caption_active_color,
+        caption_outline=req.caption_outline,
+        caption_uppercase=("1" if req.caption_uppercase else "0") if req.caption_uppercase is not None else None,
+        caption_margin_v=req.caption_margin_v,
         subtitle_script=req.subtitle_script,
         whisper_model=req.whisper_model,
         force_align=req.force_align,
@@ -541,6 +555,13 @@ async def create_upload_job(
     streamer_bg: str | None = Form(default=None),
     streamer_theme: str | None = Form(default=None),
     caption_position: str | None = Form(default=None),
+    caption_font: str | None = Form(default=None),
+    caption_font_size: int | None = Form(default=None, ge=20, le=200),
+    caption_primary_color: str | None = Form(default=None),
+    caption_active_color: str | None = Form(default=None),
+    caption_outline: int | None = Form(default=None, ge=0, le=12),
+    caption_uppercase: bool | None = Form(default=None),
+    caption_margin_v: int | None = Form(default=None, ge=0, le=500),
     subtitle_script: str | None = Form(default=None),
     whisper_model: str | None = Form(default=None),
     force_align: bool | None = Form(default=None),
@@ -586,6 +607,13 @@ async def create_upload_job(
         streamer_bg=streamer_bg,
         streamer_theme=streamer_theme,
         caption_position=caption_position,
+        caption_font=caption_font,
+        caption_font_size=caption_font_size,
+        caption_primary_color=caption_primary_color,
+        caption_active_color=caption_active_color,
+        caption_outline=caption_outline,
+        caption_uppercase=("1" if caption_uppercase else "0") if caption_uppercase is not None else None,
+        caption_margin_v=caption_margin_v,
         subtitle_script=subtitle_script,
         whisper_model=whisper_model,
         force_align=force_align,

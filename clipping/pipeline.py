@@ -15,6 +15,30 @@ from .utils import ToolError, log, read_json, video_info, write_json
 Report = Callable[[str, float, str], None]
 
 
+def caption_custom_options(settings: Settings) -> dict:
+    """Customizer-style overrides from Settings, for first-render captions.
+
+    Empty values mean "use the preset default"; captions.build treats missing
+    keys the same way.
+    """
+    opts: dict = {}
+    if settings.caption_font:
+        opts["font"] = settings.caption_font
+    if settings.caption_font_size:
+        opts["font_size"] = settings.caption_font_size
+    if settings.caption_primary_color:
+        opts["primary_color"] = settings.caption_primary_color
+    if settings.caption_active_color:
+        opts["active_color"] = settings.caption_active_color
+    if settings.caption_outline:
+        opts["outline"] = settings.caption_outline
+    if settings.caption_uppercase:
+        opts["uppercase"] = settings.caption_uppercase != "0"
+    if settings.caption_margin_v:
+        opts["margin_v"] = settings.caption_margin_v
+    return opts
+
+
 def _clip_dir(job_dir: Path) -> Path:
     path = job_dir / "clips"
     path.mkdir(parents=True, exist_ok=True)
@@ -186,6 +210,7 @@ def process(
                 hook=hook_override or clip.get("hook") or None,
                 censor=censor,
                 layout=plan.get("mode", "auto"),
+                custom_options=caption_custom_options(settings),
             )
             render.srt_from_words(words, start, end, clip_dir / f"{clip['slug']}.srt")
             sendcmd = None

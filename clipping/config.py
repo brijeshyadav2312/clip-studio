@@ -96,6 +96,16 @@ class Settings:
     # 10. PiP scale & placement (when layout is streamer_pip): small | medium | large
     streamer_pip_size: str = os.getenv("CLIP_STREAMER_PIP_SIZE", "medium")
 
+    # Caption look (customizer overrides, applied on first render too).
+    # font/size/colours mirror the customizer payload; empty = preset default.
+    caption_font: str = os.getenv("CLIP_CAPTION_FONT", "")
+    caption_font_size: int = _int("CLIP_CAPTION_FONT_SIZE", 0)
+    caption_primary_color: str = os.getenv("CLIP_CAPTION_PRIMARY_COLOR", "")
+    caption_active_color: str = os.getenv("CLIP_CAPTION_ACTIVE_COLOR", "")
+    caption_outline: int = _int("CLIP_CAPTION_OUTLINE", 0)
+    caption_uppercase: str = os.getenv("CLIP_CAPTION_UPPERCASE", "")  # "", "1", "0"
+    caption_margin_v: int = _int("CLIP_CAPTION_MARGIN_V", 0)
+
     # ASR
     # "small" keeps CPU renders practical but garbles proper nouns; "medium"
     # is noticeably more accurate and still fits in ~8 GB RAM on int8.
