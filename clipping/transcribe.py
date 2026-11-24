@@ -10,6 +10,7 @@ Improvements over raw Whisper output:
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 from typing import Callable
 
@@ -462,8 +463,30 @@ def transcribe(
         if title_words:
             hotwords = " ".join(title_words[:12])
 
+    # Decode with ffmpeg ourselves: newer PyAV (>=15) removed the
+    # `metadata_errors` kwarg that faster-whisper still passes, which crashes
+    # on str/Path inputs. A float32 numpy array skips PyAV entirely.
+    model_input = audio
+    try:
+        import numpy as _np
+
+        raw = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-i", str(audio),
+                "-f", "f32le", "-ac", "1", "-ar", "16000", "-",
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ).stdout
+        decoded = _np.frombuffer(raw, dtype=_np.float32)
+        if decoded.size:
+            model_input = decoded
+    except Exception:
+        model_input = str(audio)  # fall back to letting faster-whisper decode
+
     segments_iter, info = model.transcribe(
-        str(audio),
+        model_input,
         language=lang_param,
         task=task,
         initial_prompt=initial_prompt,
