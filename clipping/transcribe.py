@@ -279,6 +279,78 @@ def _maybe_force_align(audio: Path, transcript: dict, settings: Settings) -> dic
         return transcript
 
 
+def _polish_transcript_llm(segments: list[dict], settings: Settings, title: str = "") -> list[dict]:
+    """Contextual semantic and typo correction pass using LLM (OpusClip/Descript architecture).
+
+    Corrects phonetically misheard proper nouns, transliteration errors, and homophones
+    while keeping the segment timestamps synchronized.
+    """
+    from .llm import complete_json, provider_available
+    if not provider_available(settings) or not segments:
+        return segments
+
+    chunk_size = 20
+    polished_segments = [dict(s) for s in segments]
+
+    system_prompt = (
+        "You are a professional subtitling editor at OpusClip/Descript level.\n"
+        "Your task is to fix speech-to-text typos, misheard words, and bad transliterations "
+        "in a video transcript without changing the meaning or sentence timing.\n"
+        f"Video title / context: {title or 'Short form video'}\n\n"
+        "Rules:\n"
+        "1. Fix obvious phonetic misinterpretations and proper nouns (names, brands, characters, movies).\n"
+        "2. For Hinglish/Hindi written in Latin script: use natural, readable phonetic spelling.\n"
+        "3. Do NOT add, remove, or summarize sentences. Keep the exact same number of items.\n"
+        "4. Return JSON only: {\"items\": [\"corrected text 0\", \"corrected text 1\", ...]}"
+    )
+
+    for i in range(0, len(segments), chunk_size):
+        chunk = segments[i : i + chunk_size]
+        items_payload = "\n".join(f"{idx}: {s['text']}" for idx, s in enumerate(chunk))
+        user_prompt = f"Correct these transcript segments:\n\n{items_payload}"
+        try:
+            data = complete_json(system_prompt, user_prompt, settings)
+            corrected_list = (
+                data.get("items") if isinstance(data, dict) else (data if isinstance(data, list) else None)
+            )
+            if isinstance(corrected_list, list) and len(corrected_list) == len(chunk):
+                for sub_idx, corr_text in enumerate(corrected_list):
+                    corr_str = str(corr_text).strip()
+                    if not corr_str:
+                        continue
+                    global_idx = i + sub_idx
+                    orig_words = polished_segments[global_idx].get("words") or []
+                    new_words_list = corr_str.split()
+
+                    polished_segments[global_idx]["text"] = corr_str
+
+                    if len(orig_words) == len(new_words_list):
+                        for w_obj, new_w in zip(orig_words, new_words_list):
+                            w_obj["word"] = new_w
+                    elif orig_words and new_words_list:
+                        seg_start = orig_words[0]["start"]
+                        seg_end = orig_words[-1]["end"]
+                        total_dur = max(0.1, seg_end - seg_start)
+                        w_dur = total_dur / len(new_words_list)
+                        new_words_objs = []
+                        for w_i, nw in enumerate(new_words_list):
+                            ws = round(seg_start + w_i * w_dur, 3)
+                            we = round(min(seg_end, ws + w_dur), 3)
+                            new_words_objs.append({
+                                "start": ws,
+                                "end": we,
+                                "word": nw,
+                                "probability": 1.0,
+                            })
+                        polished_segments[global_idx]["words"] = new_words_objs
+                log(f"[asr] LLM transcript polish applied to segments {i+1}-{min(len(segments), i+chunk_size)}")
+        except Exception as exc:
+            log(f"[asr] LLM transcript polish skipped for chunk {i}: {exc}")
+            continue
+
+    return polished_segments
+
+
 def _device(settings: Settings) -> str:
     if settings.whisper_device != "auto":
         return settings.whisper_device
@@ -341,6 +413,7 @@ def transcribe(
     settings: Settings,
     progress: Progress | None = None,
     force: bool = False,
+    title: str = "",
 ) -> dict:
     """Return {'language', 'duration', 'segments': [...]} with word timings.
 
@@ -365,22 +438,42 @@ def transcribe(
     mode = getattr(settings, "subtitle_script", "auto")
     task = "translate" if mode == "en_translate" else "transcribe"
     initial_prompt = None
+    lang_param = None
     if mode in ("hinglish", "auto"):
         initial_prompt = (
-            "Yeh video Hindi aur English (Hinglish) mein hai. "
-            "Please transcribe in consistent Latin script (Hinglish and English only), without Urdu or Arabic script."
+            (f"Context: {title}. " if title else "")
+            + "Yeh video Hindi aur English (Hinglish) mein hai. "
+            "Please transcribe dialogue accurately in clean Latin script (Hinglish / English words). "
+            "Proper nouns, names, characters, dialogues in English alphabet."
         )
     elif mode == "en_translate":
-        initial_prompt = "Transcribe and translate all spoken dialogue into natural, fluent English."
+        initial_prompt = (f"Context: {title}. " if title else "") + "Transcribe and translate all spoken dialogue into natural, fluent English."
     elif mode == "hi":
-        initial_prompt = "यह वीडियो हिंदी में है। कृपया शुद्ध देवनागरी लिपि में लिखें।"
+        lang_param = "hi"
+        initial_prompt = (f"संदर्भ: {title}। " if title else "") + "यह वीडियो हिंदी में है। कृपया शुद्ध देवनागरी लिपि में लिखें।"
+    elif mode == "en":
+        lang_param = "en"
+        initial_prompt = (f"Context: {title}. " if title else "") + "English dialogue and speech with proper spelling and capitalization."
+
+    hotwords = None
+    if title:
+        clean_title = re.sub(r"[^\w\s]", " ", title)
+        title_words = [w for w in clean_title.split() if len(w) > 2]
+        if title_words:
+            hotwords = " ".join(title_words[:12])
 
     segments_iter, info = model.transcribe(
         str(audio),
-        language=None,
+        language=lang_param,
         task=task,
         initial_prompt=initial_prompt,
-        beam_size=1,
+        hotwords=hotwords,
+        beam_size=5,
+        best_of=5,
+        patience=1.0,
+        repetition_penalty=1.15,
+        no_speech_threshold=0.5,
+        compression_ratio_threshold=2.4,
         vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 500, "speech_pad_ms": 200},
         word_timestamps=True,
@@ -420,6 +513,9 @@ def transcribe(
     for seg in segments:
         seg["words"] = _sanitize_words(seg["words"], min_prob)
     segments = _sanitize_segments(segments)
+
+    # Semantic typo & phonetic polishing pass (OpusClip / Descript standard)
+    segments = _polish_transcript_llm(segments, settings, title=title)
 
     if not segments:
         raise ToolError(

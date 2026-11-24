@@ -53,7 +53,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
   const [skipSponsors, setSkipSponsors] = useState(true);
   const [forceAlign, setForceAlign] = useState(false);
   const [whisperMinProb, setWhisperMinProb] = useState('0.25');
-  const [whisperModel, setWhisperModel] = useState('base');
+  const [whisperModel, setWhisperModel] = useState('small');
   const [cookiesFromBrowser, setCookiesFromBrowser] = useState('');
   const [streamerGameFocus, setStreamerGameFocus] = useState('center');
   const [streamerSplitRatio, setStreamerSplitRatio] = useState('35_65');
@@ -434,6 +434,24 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-muted block mb-1 font-mono text-[11px] truncate">
+                          Whisper ASR Model
+                        </label>
+                        <select
+                          value={whisperModel}
+                          onChange={(e) => setWhisperModel(e.target.value)}
+                          className="w-full bg-[#0a0c10] border border-rule rounded-xl p-2.5 text-xs text-ink focus:border-[#ba6238] focus:outline-none cursor-pointer"
+                        >
+                          <option value="small">small (Recommended · High Accuracy, Low Typos)</option>
+                          <option value="base">base (Fastest · Basic Accuracy)</option>
+                          <option value="large-v3-turbo">large-v3-turbo (State-of-the-Art Quality)</option>
+                          <option value="medium">medium (Heavy Multilingual / Accents)</option>
+                        </select>
+                        <span className="text-[10px] text-muted block mt-0.5 truncate">
+                          Larger models eliminate typos, transliteration errors &amp; misheard words
+                        </span>
+                      </div>
                       <div>
                         <label className="text-muted block mb-1 font-mono text-[11px] truncate">
                           Min ASR Confidence

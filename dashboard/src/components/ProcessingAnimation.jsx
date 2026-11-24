@@ -312,14 +312,42 @@ export default function ProcessingAnimation({
             )
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade">
-              {clips.map((clip, index) => (
-                <ResultCard
-                  key={clip.filename || clip.slug || index}
-                  clip={clip}
-                  jobId={job.id}
-                  onDelete={onDeleteClip}
-                />
-              ))}
+              {clips.map((clip, index) => {
+                const isReady = Boolean(clip.video || clip.url || isDone);
+                if (!isReady) {
+                  return (
+                    <div
+                      key={clip.slug || index}
+                      className="overflow-hidden rounded-2xl bg-[#0d0f14] border border-white/5 shadow-xl flex flex-col justify-between"
+                    >
+                      <div className="aspect-[9/16] w-full bg-black/50 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                        <div className="w-10 h-10 rounded-full border-2 border-[#ba6238]/20 border-t-[#ba6238] animate-spin" />
+                        <div className="space-y-1">
+                          <span className="text-xs text-white/80 font-semibold block">
+                            Rendering Short #{index + 1}…
+                          </span>
+                          <span className="text-[11px] text-muted block line-clamp-1">
+                            {clip.title || clip.hook || 'Applying captions & layout'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-3.5 bg-[#12151c] space-y-2 border-t border-white/5">
+                        <div className="h-3.5 bg-white/5 rounded w-3/4 animate-pulse" />
+                        <div className="h-8 bg-white/5 rounded-xl w-full animate-pulse" />
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <ResultCard
+                    key={clip.filename || clip.slug || index}
+                    clip={clip}
+                    jobId={job.id}
+                    onDelete={onDeleteClip}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

@@ -1,53 +1,101 @@
-import React, { useState, useRef } from 'react';
-import { Download, FileText, Trash2, Play, Pause, Volume2, VolumeX, Sparkles, Clock } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Download, FileText, Trash2, Play, Pause, Volume2, VolumeX, RefreshCw, Clock } from 'lucide-react';
 
-export default function ResultCard({ clip = {}, jobId = '', onDelete }) {
+export default function ResultCard({ clip = {}, jobId = '', onDelete, jobDate = '' }) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [progressPct, setProgressPct] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const videoRef = useRef(null);
 
-  const filename =
-    clip.filename ||
-    (clip.video ? clip.video.split('/').pop() : `${clip.slug || 'clip'}.mp4`);
-
+  const rawFilename = clip.filename || (clip.video ? clip.video.split('/').pop() : `${clip.slug || 'clip'}.mp4`);
+  const filename = rawFilename.endsWith('.mp4') ? rawFilename : `${rawFilename}.mp4`;
   const srtFilename = filename.replace(/\.mp4$/i, '.srt');
 
-  const videoUrl =
-    clip.url ||
-    (clip.video ? `/media/${jobId}/${clip.video}` : `/media/${jobId}/clips/${filename}`);
+  const resolvedJobId = jobId || clip.jobId || '';
+  const rawVideo = clip.url || clip.video || '';
+  const videoUrl = rawVideo.startsWith('http') || rawVideo.startsWith('/media')
+    ? rawVideo
+    : `/media/${resolvedJobId}/${clip.video || `clips/${filename}`}`;
 
-  const srtUrl =
-    clip.srt_url ||
-    (clip.srt ? `/media/${jobId}/${clip.srt}` : `/media/${jobId}/clips/${srtFilename}`);
+  const rawSrt = clip.srt_url || clip.srt || '';
+  const srtUrl = rawSrt.startsWith('http') || rawSrt.startsWith('/media')
+    ? rawSrt
+    : `/media/${resolvedJobId}/${clip.srt || `clips/${srtFilename}`}`;
 
-  const thumbUrl = clip.thumb_url || (clip.thumb ? `/media/${jobId}/${clip.thumb}` : null);
+  const rawThumb = clip.thumb_url || clip.thumb || '';
+  const thumbUrl = rawThumb ? (rawThumb.startsWith('http') || rawThumb.startsWith('/media') ? rawThumb : `/media/${resolvedJobId}/${rawThumb}`) : null;
 
-  const handlePlay = (e) => {
-    setIsPlaying(true);
-    // Pause all other videos on the page so only one plays at a time
-    document.querySelectorAll('video').forEach((v) => {
-      if (v !== e.target && !v.paused) {
-        v.pause();
-      }
-    });
+  const durationSec = clip.duration
+    ? Math.round(clip.duration)
+    : Math.round((clip.end || 0) - (clip.start || 0));
+  const score = Math.round(clip.score || clip.virality_score || 75);
+  const displayTitle = clip.title || clip.hook || clip.text || filename.replace(/\.mp4$/i, '');
+
+  // Reset state if videoUrl changes
+  useEffect(() => {
+    setIsPlaying(false);
+    setProgressPct(0);
+    setLoadError(false);
+  }, [videoUrl, retryKey]);
+
+  const togglePlay = (e) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+
+    if (videoRef.current.paused || videoRef.current.ended) {
+      // Pause all other video elements across the page
+      document.querySelectorAll('video').forEach((v) => {
+        if (v !== videoRef.current && !v.paused) {
+          v.pause();
+        }
+      });
+      videoRef.current.play().then(() => {
+        setIsPlaying(true);
+        setLoadError(false);
+      }).catch((err) => {
+        console.warn('Playback request was interrupted or failed:', err);
+        setIsPlaying(false);
+      });
+    } else {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    }
   };
 
-  const handlePause = () => {
+  const toggleMute = (e) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    videoRef.current.muted = !videoRef.current.muted;
+    setIsMuted(videoRef.current.muted);
+  };
+
+  const handleTimeUpdate = () => {
+    if (!videoRef.current) return;
+    const dur = videoRef.current.duration;
+    const curr = videoRef.current.currentTime;
+    if (dur && dur > 0) {
+      setProgressPct((curr / dur) * 100);
+    }
+  };
+
+  const handleVideoEnded = () => {
+    setIsPlaying(false);
+    setProgressPct(100);
+  };
+
+  const handleVideoError = () => {
+    console.warn(`Video failed to load: ${videoUrl}`);
+    setLoadError(true);
     setIsPlaying(false);
   };
 
-  const togglePlay = (e) => {
-    // Avoid double toggling if clicked directly on native control bar
-    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      document.querySelectorAll('video').forEach((v) => {
-        if (v !== videoRef.current && !v.paused) v.pause();
-      });
-      videoRef.current.play().catch(() => {});
-    } else {
-      videoRef.current.pause();
-    }
+  const handleRetry = (e) => {
+    e.stopPropagation();
+    setLoadError(false);
+    setRetryKey((k) => k + 1);
   };
 
   const handleDelete = async (e) => {
@@ -56,9 +104,9 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete }) {
     setIsDeleting(true);
     try {
       if (onDelete) {
-        await onDelete(filename);
+        await onDelete(resolvedJobId, filename);
       } else {
-        const res = await fetch(`/api/jobs/${jobId}/clips/${filename}`, { method: 'DELETE' });
+        const res = await fetch(`/api/jobs/${resolvedJobId}/clips/${filename}`, { method: 'DELETE' });
         if (!res.ok) throw new Error('Delete failed');
       }
     } catch (err) {
@@ -79,76 +127,118 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete }) {
     document.body.removeChild(a);
   };
 
-  const durationSec = clip.duration
-    ? Math.round(clip.duration)
-    : Math.round((clip.end || 0) - (clip.start || 0));
-  const score = Math.round(clip.score || clip.virality_score || 75);
-
   return (
-    <div className="card p-3 border border-rule2 bg-[#0e1015] hover:border-[#ba6238]/50 transition-colors rounded-2xl group flex flex-col justify-between">
-      {/* Video Container (9:16 Portrait, fully clickable) */}
+    <div className="overflow-hidden rounded-2xl bg-[#0d0f14] border border-white/10 hover:border-[#ba6238]/60 transition-all duration-300 shadow-xl flex flex-col justify-between group">
+      {/* 9:16 Video Player Container - ZERO outer padding, edge-to-edge media */}
       <div
         onClick={togglePlay}
-        className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black flex items-center justify-center border border-rule group/video cursor-pointer"
+        className="relative aspect-[9/16] w-full bg-black overflow-hidden flex items-center justify-center cursor-pointer select-none group/player"
       >
         <video
+          key={`${videoUrl}-${retryKey}`}
           ref={videoRef}
-          src={videoUrl || undefined}
+          src={videoUrl ? `${videoUrl}${retryKey ? `?r=${retryKey}` : ''}` : undefined}
           poster={thumbUrl || undefined}
-          controls
           preload="metadata"
+          playsInline
           className="w-full h-full object-cover"
-          onPlay={handlePlay}
-          onPause={handlePause}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={handleVideoEnded}
+          onError={handleVideoError}
         />
 
-        {/* Center Glass Play Button Overlay (visible when paused or hover) */}
-        {!isPlaying && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20 group-hover/video:bg-black/40 transition-colors">
-            <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-2xl group-hover/video:scale-110 transition-transform">
-              <Play size={20} className="fill-white ml-0.5" />
-            </div>
-          </div>
-        )}
-
-        {/* Top Badges */}
-        <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none z-10">
-          <span className="pill pill-ok text-[10px] font-mono font-bold">
+        {/* Top Badges (Score & Duration) */}
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-10">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-emerald-500/30 text-emerald-400 text-[11px] font-mono font-bold shadow-md">
             Score {score}
           </span>
           {durationSec > 0 && (
-            <span className="pill bg-black/80 border border-rule text-ink text-[10px] font-mono">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-white/90 text-[11px] font-mono shadow-md">
+              <Clock size={11} className="text-white/60" />
               {durationSec}s
             </span>
           )}
         </div>
+
+        {/* Center Play Button Overlay - Smooth fade and scale */}
+        {!isPlaying && !loadError && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/30 group-hover/player:bg-black/45 transition-colors">
+            <div className="w-13 h-13 rounded-full bg-black/65 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-2xl transition-transform duration-200 group-hover/player:scale-110">
+              <Play size={22} className="fill-white ml-0.5" />
+            </div>
+          </div>
+        )}
+
+        {/* Error / Reload Overlay */}
+        {loadError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/75 p-4 text-center z-10 space-y-2">
+            <p className="text-xs text-white/80 font-medium">Clip still finalizing or unavailable</p>
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <RefreshCw size={12} />
+              <span>Retry</span>
+            </button>
+          </div>
+        )}
+
+        {/* Bottom Corner Mute / Unmute Button */}
+        <button
+          type="button"
+          onClick={toggleMute}
+          className="absolute bottom-2.5 right-2.5 p-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white/80 hover:text-white hover:scale-110 transition-all z-20 cursor-pointer"
+          title={isMuted ? 'Unmute' : 'Mute'}
+        >
+          {isMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+        </button>
+
+        {/* Bottom Progress Bar */}
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/15 z-10 pointer-events-none overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-[#ba6238] to-[#f28244] transition-all duration-150"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
       </div>
 
-      {/* Clip Info & Caption */}
-      <div className="mt-3 space-y-2 min-w-0">
-        <div className="min-h-[38px] min-w-0">
-          <p className="text-xs sm:text-sm font-medium text-ink line-clamp-2 break-words leading-snug">
-            {clip.title || clip.hook || clip.text || filename}
-          </p>
+      {/* One UI Bottom Information & Action Controls */}
+      <div className="p-3.5 sm:p-4 bg-[#12151c] flex flex-col justify-between flex-1 gap-3">
+        <div className="space-y-1 min-w-0">
+          <h4
+            className="text-xs sm:text-sm font-semibold text-white/95 line-clamp-2 leading-snug group-hover:text-[#ba6238] transition-colors"
+            title={displayTitle}
+          >
+            {displayTitle}
+          </h4>
+          {jobDate && (
+            <p className="text-[11px] text-muted/70 font-mono flex items-center gap-1 truncate">
+              <Clock size={10} className="shrink-0" />
+              <span>{jobDate}</span>
+            </p>
+          )}
         </div>
 
-        {/* Action Buttons (Static, no scaling) */}
-        <div className="flex items-center gap-1.5 pt-1.5 border-t border-rule/60">
+        {/* Clean One UI Action Buttons */}
+        <div className="flex items-center gap-2 pt-2 border-t border-white/5">
           <button
             type="button"
             onClick={(e) => handleDownload(e, videoUrl, filename)}
-            className="flex-1 py-1.5 px-2 bg-paper3 hover:bg-[#ba6238] hover:text-white text-ink rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1 border border-rule cursor-pointer truncate"
-            title="Download MP4"
+            className="flex-1 py-2 px-3 bg-gradient-to-r from-[#ba6238] to-[#d47345] hover:from-[#c96a3d] hover:to-[#df7d4f] text-white rounded-xl text-xs font-semibold shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer truncate"
+            title="Download MP4 video"
           >
-            <Download size={12} className="shrink-0" />
-            <span className="truncate">MP4</span>
+            <Download size={13} className="shrink-0" />
+            <span className="truncate">Download MP4</span>
           </button>
 
           <button
             type="button"
             onClick={(e) => handleDownload(e, srtUrl, srtFilename)}
-            className="py-1.5 px-2.5 bg-paper2 hover:bg-paper3 text-muted hover:text-ink rounded-lg text-xs font-mono transition-colors border border-rule cursor-pointer shrink-0"
-            title="Download Subtitles SRT"
+            className="py-2 px-3 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white rounded-xl text-xs font-mono font-medium border border-white/10 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+            title="Download Subtitles (.SRT)"
           >
             SRT
           </button>
@@ -157,10 +247,10 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete }) {
             type="button"
             disabled={isDeleting}
             onClick={handleDelete}
-            className="p-1.5 bg-paper2 hover:bg-err/20 text-muted hover:text-err rounded-lg transition-colors border border-rule shrink-0 cursor-pointer"
+            className="p-2 bg-white/5 hover:bg-red-500/20 text-white/50 hover:text-red-400 rounded-xl border border-white/10 transition-colors flex items-center justify-center cursor-pointer shrink-0"
             title="Delete this clip"
           >
-            <Trash2 size={13} className={isDeleting ? 'animate-spin' : ''} />
+            <Trash2 size={14} className={isDeleting ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>

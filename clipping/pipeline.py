@@ -138,6 +138,7 @@ def process(
         transcript = transcribe.transcribe(
             source, job_dir, settings,
             progress=lambda pct, msg: save("transcribing", 10 + pct * 0.35, msg),
+            title=title,
         )
         manifest["language"] = transcript.get("language")
 
