@@ -11,6 +11,7 @@ import {
   Sparkles,
   Mail,
   Film,
+  Sliders,
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -23,6 +24,7 @@ export default function Sidebar({
 }) {
   const navItems = [
     { id: 'generator', label: 'Clip Generator', icon: Scissors },
+    { id: 'customizer', label: 'Customizer', icon: Sliders },
     { id: 'history', label: 'History', icon: Clock },
     { id: 'aiconnect', label: 'AI Connect', icon: Bot },
     { id: 'settings', label: 'Settings', icon: Settings },

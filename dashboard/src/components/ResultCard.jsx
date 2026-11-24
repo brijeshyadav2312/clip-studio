@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Download, FileText, Trash2, Play, Pause, Volume2, VolumeX, RefreshCw, Clock, Sliders } from 'lucide-react';
-import ClipCustomizer from './ClipCustomizer';
 
-export default function ResultCard({ clip = {}, jobId = '', onDelete, onClipUpdated, jobDate = '' }) {
+export default function ResultCard({ clip = {}, jobId = '', onDelete, onEdit, onClipUpdated, jobDate = '' }) {
   const [currentClip, setCurrentClip] = useState(clip);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -10,7 +9,6 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete, onClipUpda
   const [isDeleting, setIsDeleting] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
-  const [isCustomizing, setIsCustomizing] = useState(false);
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -234,9 +232,9 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete, onClipUpda
         <div className="flex items-center gap-2 pt-2 border-t border-white/5">
           <button
             type="button"
-            onClick={() => setIsCustomizing(true)}
+            onClick={() => onEdit && onEdit(currentClip, resolvedJobId)}
             className="py-2 px-3 bg-white/5 hover:bg-[#ba6238]/20 hover:text-[#ba6238] text-white/90 rounded-xl text-xs font-semibold border border-white/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
-            title="Customize captions style, placement & trimming"
+            title="Open in Customizer Studio (Live changes)"
           >
             <Sliders size={13} className="shrink-0 text-[#ba6238]" />
             <span>Edit</span>
@@ -272,21 +270,6 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete, onClipUpda
           </button>
         </div>
       </div>
-
-      {/* Clip Customization Studio Modal */}
-      {isCustomizing && (
-        <ClipCustomizer
-          clip={currentClip}
-          jobId={resolvedJobId}
-          isOpen={isCustomizing}
-          onClose={() => setIsCustomizing(false)}
-          onSave={(updated) => {
-            setCurrentClip(updated);
-            setRetryKey((k) => k + 1);
-            if (onClipUpdated) onClipUpdated(updated);
-          }}
-        />
-      )}
     </div>
   );
 }

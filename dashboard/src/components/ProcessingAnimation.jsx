@@ -23,6 +23,7 @@ export default function ProcessingAnimation({
   logs = [],
   onCancelProject,
   onDeleteClip,
+  onEditClip,
 }) {
   const [logsOpen, setLogsOpen] = useState(true);
   const logContainerRef = useRef(null);
@@ -345,6 +346,7 @@ export default function ProcessingAnimation({
                     clip={clip}
                     jobId={job.id}
                     onDelete={onDeleteClip}
+                    onEdit={onEditClip}
                   />
                 );
               })}

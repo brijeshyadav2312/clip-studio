@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import MediaInput from './components/MediaInput';
 import ProcessingAnimation from './components/ProcessingAnimation';
 import HistoryView from './components/HistoryView';
+import CustomizerView from './components/CustomizerView';
 import AIConnectView from './components/AIConnectView';
 import SettingsView from './components/SettingsView';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -10,7 +11,7 @@ import NotFoundView from './components/NotFoundView';
 import { AlertCircle, Film, Sparkles, Cookie, Activity, X, Github, Star, Plus } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('generator'); // 'generator' | 'history' | 'aiconnect' | 'settings'
+  const [activeTab, setActiveTab] = useState('generator'); // 'generator' | 'customizer' | 'history' | 'aiconnect' | 'settings'
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarPosition, setSidebarPosition] = useState(
     () => localStorage.getItem('clip_sidebar_pos') || 'left'
@@ -20,6 +21,7 @@ export default function App() {
   const [cookieStatus, setCookieStatus] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [activeJob, setActiveJob] = useState(null);
+  const [selectedCustomizerClip, setSelectedCustomizerClip] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -316,15 +318,21 @@ export default function App() {
     }
   };
 
+  const handleEditClip = (clip, jobId) => {
+    setSelectedCustomizerClip({ clip, jobId });
+    setActiveTab('customizer');
+  };
+
   const getPageTitle = () => {
     if (activeTab === 'generator') return isProcessing || activeJob ? 'Live Workbench' : 'Clip Generator';
+    if (activeTab === 'customizer') return 'Shorts Customizer Studio';
     if (activeTab === 'history') return 'Shorts History';
     if (activeTab === 'aiconnect') return 'AI Connect';
     if (activeTab === 'settings') return 'Settings & Customization';
     return 'Not Found';
   };
 
-  const validTabs = ['generator', 'history', 'aiconnect', 'settings'];
+  const validTabs = ['generator', 'customizer', 'history', 'aiconnect', 'settings'];
 
   // Check if current view is the static generator form (to eliminate scrollbars)
   const isSinglePageGenerator = activeTab === 'generator' && !isProcessing && !activeJob;
@@ -443,6 +451,7 @@ export default function App() {
                     logs={logs}
                     onCancelProject={handleCancelProject}
                     onDeleteClip={handleDeleteClip}
+                    onEditClip={handleEditClip}
                   />
                 ) : (
                   <MediaInput
@@ -455,13 +464,24 @@ export default function App() {
               </div>
             )}
 
-            {/* Tab 2: History (Instant Optimistic Updates, Delete All, Refresh) */}
+            {/* Tab 2: Customizer Studio (Live, Zero-processing customization) */}
+            {activeTab === 'customizer' && (
+              <CustomizerView
+                jobs={jobs}
+                activeJob={activeJob}
+                selectedClipInfo={selectedCustomizerClip}
+                onNavigateToGenerator={() => setActiveTab('generator')}
+              />
+            )}
+
+            {/* Tab 3: History (Instant Optimistic Updates, Delete All, Refresh) */}
             {activeTab === 'history' && (
               <HistoryView
                 jobs={jobs}
                 onRefresh={fetchData}
                 onDeleteAll={() => setJobs([])}
                 onNavigateToGenerator={() => setActiveTab('generator')}
+                onEditClip={handleEditClip}
               />
             )}
 

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import ResultCard from './ResultCard';
 
-export default function HistoryView({ jobs = [], onRefresh, onDeleteAll, onNavigateToGenerator }) {
+export default function HistoryView({ jobs = [], onRefresh, onDeleteAll, onNavigateToGenerator, onEditClip }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -264,6 +264,7 @@ export default function HistoryView({ jobs = [], onRefresh, onDeleteAll, onNavig
               jobId={clip.jobId}
               jobDate={clip.jobDate}
               onDelete={handleDeleteClip}
+              onEdit={onEditClip}
             />
           ))}
         </div>
