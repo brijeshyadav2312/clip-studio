@@ -97,7 +97,9 @@ class Settings:
     streamer_pip_size: str = os.getenv("CLIP_STREAMER_PIP_SIZE", "medium")
 
     # ASR
-    whisper_model: str = os.getenv("WHISPER_MODEL", "small")
+    # "small" keeps CPU renders practical but garbles proper nouns; "medium"
+    # is noticeably more accurate and still fits in ~8 GB RAM on int8.
+    whisper_model: str = os.getenv("WHISPER_MODEL", "medium")
     whisper_device: str = os.getenv("WHISPER_DEVICE", "auto")
     whisper_compute: str = os.getenv("WHISPER_COMPUTE", "int8")
     whisper_threads: int = _int("WHISPER_THREADS", max(1, (os.cpu_count() or 4) - 1))
