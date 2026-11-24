@@ -120,17 +120,17 @@ def process(
             "video_url": f"/media/{job_dir.name}/{source.name}" if source.exists() else "",
         }
 
-        # 1b. Sponsor / promo skip segments (SponsorBlock, YouTube only).
-        skip_segments: list[dict] = []
-        if settings.skip_sponsors and url:
-            vid = sponsorblock.video_id_from_url(meta.get("webpage_url") or url or "")
-            if vid:
-                skip_segments = sponsorblock.fetch_skip_segments(
-                    vid, categories=settings.sponsor_categories
-                )
-                manifest["skip_segments"] = skip_segments
-        if skip_segments:
-            log(f"[pipeline] {len(skip_segments)} sponsor/promo segment(s) will be avoided")
+        # 1b. Sponsor / promo skip segments (Multi-source: SponsorBlock API + Video Chapters).
+        api_segments: list[dict] = []
+        chapter_segments: list[dict] = []
+        if settings.skip_sponsors:
+            if url:
+                vid = sponsorblock.video_id_from_url(meta.get("webpage_url") or url or "")
+                if vid:
+                    api_segments = sponsorblock.fetch_skip_segments(
+                        vid, categories=settings.sponsor_categories
+                    )
+            chapter_segments = sponsorblock.chapters_to_skip_segments(meta.get("chapters"))
 
         save("transcribing", 10, "Reading media")
 
@@ -140,6 +140,20 @@ def process(
             progress=lambda pct, msg: save("transcribing", 10 + pct * 0.35, msg),
         )
         manifest["language"] = transcript.get("language")
+
+        # 2b. Transcript / speech-level promo detection (spoken sponsor reads & CTAs)
+        speech_promos: list[dict] = []
+        if settings.skip_sponsors:
+            speech_promos = sponsorblock.detect_transcript_promos(transcript.get("segments"))
+
+        skip_segments = sponsorblock.merge_skip_segments(api_segments, chapter_segments, speech_promos)
+        manifest["skip_segments"] = skip_segments
+        if skip_segments:
+            log(
+                f"[pipeline] {len(skip_segments)} sponsor/promo segment(s) will be avoided "
+                f"(SponsorBlock: {len(api_segments)}, Chapters: {len(chapter_segments)}, Speech: {len(speech_promos)})"
+            )
+
         save("ranking", 46, "Finding the best moments")
 
         # 3. Rank -----------------------------------------------------------

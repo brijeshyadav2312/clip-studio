@@ -16,7 +16,7 @@ from typing import Iterable
 
 from .config import Settings
 from .llm import complete_json, log_provider, provider_available
-from .sponsorblock import overlaps_skip
+from .sponsorblock import overlaps_skip, trim_skip_overlap
 from .utils import clamp, log, slug
 from .transcribe import transcript_text
 
@@ -267,7 +267,10 @@ def _llm_clips(transcript: dict, settings: Settings, progress=None,
 
             # Never return a clip that sits inside a sponsor / promo segment.
             if skip_segments:
-                tainted, _cat = overlaps_skip(start, end, skip_segments, limit=settings.sponsor_overlap_limit)
+                start, end = trim_skip_overlap(start, end, skip_segments, min_sec=settings.min_sec)
+                if end - start < settings.min_sec:
+                    continue
+                tainted, _cat = overlaps_skip(start, end, skip_segments)
                 if tainted:
                     continue
 
@@ -420,9 +423,13 @@ def _heuristic_clips(transcript: dict, settings: Settings, progress=None,
 
             # Skip clips that sit inside a sponsor / promo segment.
             if skip_segments:
-                tainted, _cat = overlaps_skip(start, end, skip_segments, limit=settings.sponsor_overlap_limit)
+                start, end = trim_skip_overlap(start, end, skip_segments, min_sec=settings.min_sec * 0.8)
+                if end - start < settings.min_sec * 0.8:
+                    continue
+                tainted, _cat = overlaps_skip(start, end, skip_segments)
                 if tainted:
                     continue
+                duration = end - start
 
             text = " ".join(s["text"] for s in segments[i : j + 1]).strip()
             score = _score_window(text, duration, settings) + start_bonus[i] + end_bonus[j]
@@ -507,7 +514,7 @@ def select_clips(transcript: dict, settings: Settings, progress=None,
         start, end = segments[0]["start"], segments[-1]["end"]
         # Even a short source should not be a sponsor read.
         if skip_segments:
-            tainted, _cat = overlaps_skip(start, end, skip_segments, limit=settings.sponsor_overlap_limit)
+            tainted, _cat = overlaps_skip(start, end, skip_segments)
             if tainted:
                 return []
         text = " ".join(s["text"] for s in segments)
@@ -540,7 +547,7 @@ def select_clips(transcript: dict, settings: Settings, progress=None,
     # Final defense-in-depth: drop any clip still overlapping a skip segment.
     if skip_segments:
         before = len(clips)
-        clips = [c for c in clips if not overlaps_skip(c["start"], c["end"], skip_segments, limit=settings.sponsor_overlap_limit)[0]]
+        clips = [c for c in clips if not overlaps_skip(c["start"], c["end"], skip_segments)[0]]
         if before != len(clips):
             log(f"[rank] dropped {before - len(clips)} clip(s) overlapping sponsor segments")
 

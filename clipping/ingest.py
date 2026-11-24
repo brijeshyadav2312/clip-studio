@@ -116,6 +116,7 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
                     "webpage_url": data.get("webpage_url") or url,
                     "duration": data.get("duration"),
                     "thumbnail": data.get("thumbnail") or "",
+                    "chapters": data.get("chapters") or [],
                 }
     except Exception as exc:
         raw_msg = strip_ansi(str(exc))
@@ -135,6 +136,7 @@ def download(url: str, dest_dir: Path, settings: Settings, progress: Progress | 
                             "uploader": data.get("uploader") or "",
                             "webpage_url": data.get("webpage_url") or url,
                             "duration": data.get("duration"),
+                            "chapters": data.get("chapters") or [],
                         }
             except Exception as fallback_exc:
                 raw_fallback = strip_ansi(str(fallback_exc))
