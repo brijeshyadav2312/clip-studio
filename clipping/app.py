@@ -751,3 +751,57 @@ def cancel_job(job_id: str):
     with LOCK:
         JOB_CACHE.pop(job_id, None)
     return {"ok": True, "cancelled": job_id}
+
+
+class ClipCustomizeRequest(BaseModel):
+    caption_style: str | None = None
+    caption_position: str | None = None
+    margin_v: int | None = None
+    font: str | None = None
+    font_size: int | None = None
+    primary_color: str | None = None
+    active_color: str | None = None
+    uppercase: bool | None = None
+    hook: str | None = None
+    start: float | None = None
+    end: float | None = None
+    censor: bool | None = None
+    framing: str | None = None
+
+
+@app.get("/api/jobs/{job_id}/clips/{clip_identifier}/words")
+def get_clip_words_endpoint(job_id: str, clip_identifier: str):
+    path = _job_path(job_id)
+    try:
+        data = pipeline.get_clip_words(path, clip_identifier)
+        return data
+    except ToolError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/jobs/{job_id}/clips/{clip_identifier}/customize")
+def customize_clip_endpoint(job_id: str, clip_identifier: str, req: ClipCustomizeRequest):
+    path = _job_path(job_id)
+    opts = {k: v for k, v in req.dict().items() if v is not None}
+    try:
+        updated_clip = pipeline.customize_clip(path, clip_identifier, opts)
+        with LOCK:
+            if job_id in JOB_CACHE:
+                job = JOB_CACHE[job_id]
+                for i, c in enumerate(job.get("clips") or []):
+                    if (
+                        c.get("slug") == clip_identifier
+                        or c.get("filename") == clip_identifier
+                        or Path(c.get("video", "")).name == clip_identifier
+                    ):
+                        job["clips"][i] = updated_clip
+                        break
+        norm_clips = _normalize_clips(job_id, [updated_clip])
+        return {"ok": True, "clip": norm_clips[0] if norm_clips else updated_clip}
+    except ToolError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to customize clip: {exc}")
+

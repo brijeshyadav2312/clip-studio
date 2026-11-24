@@ -239,6 +239,154 @@ def process(
         raise
 
 
+def get_clip_words(job_dir: Path, clip_identifier: str) -> dict:
+    manifest_path = job_dir / "job.json"
+    if not manifest_path.exists():
+        raise ToolError("Job not found")
+    manifest = read_json(manifest_path)
+    target_clip = None
+    for i, c in enumerate(manifest.get("clips", [])):
+        if (
+            c.get("slug") == clip_identifier
+            or c.get("filename") == clip_identifier
+            or Path(c.get("video", "")).name == clip_identifier
+            or str(i) == clip_identifier
+        ):
+            target_clip = c
+            break
+    if not target_clip:
+        raise ToolError(f"Clip '{clip_identifier}' not found")
+
+    transcript_path = job_dir / "transcript.json"
+    raw_words = []
+    if transcript_path.exists():
+        transcript = read_json(transcript_path)
+        raw_words = highlights._words_in(
+            transcript.get("segments") or [],
+            target_clip["start"],
+            target_clip["end"],
+        )
+
+    clip_start = target_clip["start"]
+    local_words = []
+    for w in raw_words:
+        local_words.append({
+            "word": w.get("word", ""),
+            "start": max(0.0, round(float(w["start"]) - clip_start, 3)),
+            "end": max(0.0, round(float(w["end"]) - clip_start, 3)),
+        })
+
+    return {
+        "clip": target_clip,
+        "words": local_words,
+        "start": target_clip["start"],
+        "end": target_clip["end"],
+        "duration": target_clip.get("duration", round(target_clip["end"] - target_clip["start"], 2)),
+        "hook": target_clip.get("hook", ""),
+        "title": target_clip.get("title", ""),
+    }
+
+
+def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) -> dict:
+    manifest_path = job_dir / "job.json"
+    if not manifest_path.exists():
+        raise ToolError("Job not found")
+    manifest = read_json(manifest_path)
+
+    target_clip = None
+    target_idx = -1
+    for i, c in enumerate(manifest.get("clips", [])):
+        if (
+            c.get("slug") == clip_identifier
+            or c.get("filename") == clip_identifier
+            or Path(c.get("video", "")).name == clip_identifier
+            or str(i) == clip_identifier
+        ):
+            target_clip = c
+            target_idx = i
+            break
+    if target_clip is None:
+        raise ToolError(f"Clip '{clip_identifier}' not found in job")
+
+    source_file = None
+    src_meta = manifest.get("source", {}).get("file")
+    if src_meta and (job_dir / src_meta).exists():
+        source_file = job_dir / src_meta
+    else:
+        for p in job_dir.iterdir():
+            if p.is_file() and p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov") and not p.name.startswith("clip"):
+                source_file = p
+                break
+    if not source_file or not source_file.exists():
+        # Fallback to existing clip video if raw source is absent
+        clip_vid = job_dir / "clips" / f"{target_clip['slug']}.mp4"
+        if clip_vid.exists():
+            source_file = clip_vid
+        else:
+            raise ToolError("Source media file is no longer available on disk.")
+
+    # Time bounds
+    start = float(custom_options.get("start", target_clip["start"]))
+    end = float(custom_options.get("end", target_clip["end"]))
+    if end <= start + 0.5:
+        end = start + 5.0
+
+    settings = settings_for(manifest.get("options") or {})
+    if custom_options.get("framing"):
+        settings.layout = custom_options["framing"]
+
+    info = video_info(source_file)
+    plan = reframe.plan(source_file, start, end, info, settings)
+
+    transcript_path = job_dir / "transcript.json"
+    words = []
+    if transcript_path.exists():
+        transcript = read_json(transcript_path)
+        words = highlights._words_in(transcript.get("segments") or [], start, end)
+
+    clip_dir = _clip_dir(job_dir)
+    rf_dir = job_dir / "rf"
+    rf_dir.mkdir(exist_ok=True)
+
+    hook = custom_options.get("hook") if "hook" in custom_options else target_clip.get("hook")
+    censor = bool(custom_options.get("censor", False))
+
+    ass_path, muted = captions.build(
+        words, start, end, settings,
+        clip_dir / f"{target_clip['slug']}.ass",
+        hook=hook or None,
+        censor=censor,
+        layout=plan.get("mode", "auto"),
+        custom_options=custom_options,
+    )
+    render.srt_from_words(words, start, end, clip_dir / f"{target_clip['slug']}.srt")
+
+    sendcmd = None
+    if plan["mode"] in ("crop", "dynamic_landscape") and plan.get("samples"):
+        sendcmd = reframe.write_sendcmd(plan["samples"], rf_dir / f"{target_clip['slug']}.txt")
+
+    out = clip_dir / f"{target_clip['slug']}.mp4"
+    render.render_clip(
+        source_file, out, job_dir, start, end, info, settings,
+        ass_path, plan, sendcmd, muted,
+    )
+
+    thumb = clip_dir / f"{target_clip['slug']}.jpg"
+    _thumb(source_file, thumb, start + min(1.0, (end - start) / 3), job_dir)
+
+    target_clip["start"] = round(start, 2)
+    target_clip["end"] = round(end, 2)
+    target_clip["duration"] = round(end - start, 2)
+    target_clip["hook"] = hook or ""
+    target_clip["customized"] = True
+    if custom_options.get("caption_style"):
+        target_clip["caption_style"] = custom_options["caption_style"]
+
+    manifest["clips"][target_idx] = target_clip
+    write_json(manifest_path, manifest)
+    return target_clip
+
+
 def new_job_dir(job_id: str) -> Path:
     path = DATA_DIR / "jobs" / job_id
     path.mkdir(parents=True, exist_ok=True)

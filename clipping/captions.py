@@ -20,12 +20,28 @@ PROFANITY = {
 }
 
 STYLES = {
-    # name: fontsize, uppercase, active colour, max words, max chars/line
+    # name: fontsize, uppercase, active colour, max words, max chars/line, pop animation
     "wordpop": {"size": 70, "upper": True, "active": "&H0000FFFF&", "words": 4, "chars": 17, "pop": True},
     "karaoke": {"size": 68, "upper": False, "active": "&H0000FFFF&", "words": 5, "chars": 19, "pop": False},
     "hormozi": {"size": 104, "upper": True, "active": "&H0000FF00&", "words": 2, "chars": 13, "pop": True},
     "clean": {"size": 58, "upper": False, "active": None, "words": 8, "chars": 26, "pop": False},
+    "neon": {"size": 76, "upper": True, "active": "&H00FFFF00&", "words": 3, "chars": 16, "pop": True},
+    "boxed": {"size": 68, "upper": True, "active": "&H0000D7FF&", "words": 3, "chars": 15, "pop": False},
+    "beast": {"size": 94, "upper": True, "active": "&H0000FFFF&", "words": 2, "chars": 12, "pop": True},
 }
+
+
+def hex_to_ass_color(hex_color: str, alpha: int = 0) -> str:
+    """Convert CSS hex color (#RRGGBB) to ASS color format (&HAABBGGRR&)."""
+    if not hex_color:
+        return "&H00FFFFFF&"
+    h = hex_color.lstrip("#")
+    if len(h) == 6:
+        r, g, b = h[0:2], h[2:4], h[4:6]
+        return f"&H{alpha:02X}{b.upper()}{g.upper()}{r.upper()}&"
+    if hex_color.startswith("&H") and hex_color.endswith("&"):
+        return hex_color
+    return "&H00FFFFFF&"
 
 HEADER = """[Script Info]
 ScriptType: v4.00+
@@ -37,8 +53,8 @@ YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},3,2,70,70,{margin_v},1
-Style: Clean,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,3,2,2,80,80,{margin_v_clean},1
+Style: Cap,{font},{size},{primary},{primary},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},3,2,70,70,{margin_v},1
+Style: Clean,{font},{size},{primary},{primary},&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,3,2,2,80,80,{margin_v_clean},1
 Style: Hook,{font},72,&H00FFFFFF,&H00FFFFFF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,3,16,0,8,60,60,{margin_hook},1
 
 [Events]
@@ -114,10 +130,27 @@ def build(
     hook: str | None = None,
     censor: bool = False,
     layout: str = "auto",
+    custom_options: dict | None = None,
 ) -> tuple[Path, list[tuple[float, float]]]:
     """Write an .ass file for the clip. Returns (path, muted_ranges)."""
-    style_name = settings.caption_style if settings.caption_style in STYLES else "wordpop"
-    style = STYLES[style_name]
+    custom = custom_options or {}
+    style_name = custom.get("caption_style") or getattr(settings, "caption_style", "wordpop")
+    if style_name not in STYLES:
+        style_name = "wordpop"
+    style = dict(STYLES[style_name])
+
+    # Allow custom overrides
+    if custom.get("font_size"):
+        style["size"] = int(custom["font_size"])
+    if custom.get("uppercase") is not None:
+        style["upper"] = bool(custom["uppercase"])
+    if custom.get("active_color"):
+        style["active"] = hex_to_ass_color(custom["active_color"])
+
+    primary_color = hex_to_ass_color(custom.get("primary_color", "#FFFFFF"))
+    font = custom.get("font") or getattr(settings, "font", None) or "Arial Black"
+    outline = int(custom.get("outline", 8 if style_name != "clean" else 3))
+
     clip_duration = max(0.1, clip_end - clip_start)
 
     local: list[dict] = []
@@ -154,12 +187,17 @@ def build(
 
     muted = [(w["start"], w["end"]) for w in local if w.get("muted")]
 
-    outline = 8 if style_name != "clean" else 3
-    font = settings.font or "Arial Black"
-
-    # Dynamic vertical position based on layout and settings
-    pos = getattr(settings, "caption_position", "auto")
-    if pos == "divider" or (pos == "auto" and layout == "streamer_split"):
+    # Dynamic vertical position based on layout, custom overrides and settings
+    pos = custom.get("caption_position") or getattr(settings, "caption_position", "auto")
+    if custom.get("margin_v") is not None:
+        margin_v = int(custom["margin_v"])
+        margin_v_clean = max(50, margin_v - 20)
+        margin_hook = 150
+    elif pos == "top":
+        margin_v = 1500
+        margin_v_clean = 1480
+        margin_hook = 180
+    elif pos == "divider" or (pos == "auto" and layout == "streamer_split"):
         margin_v = 780      # Sits directly under streamer split line, clear of gameplay action & HUD
         margin_v_clean = 760
         margin_hook = 180
@@ -184,6 +222,7 @@ def build(
         font=font,
         size=style["size"],
         outline=outline,
+        primary=primary_color,
         margin_v=margin_v,
         margin_v_clean=margin_v_clean,
         margin_hook=margin_hook,
@@ -223,7 +262,7 @@ def build(
             for j, other in enumerate(group):
                 token = other["word"].upper() if style["upper"] else other["word"]
                 if j == i:
-                    parts.append(f"{{\\1c{active}\\b1}}{token}{{\\1c&H00FFFFFF&\\b1}}")
+                    parts.append(f"{{\\1c{active}\\b1}}{token}{{\\1c{primary_color}\\b1}}")
                 else:
                     parts.append(token)
             # Re-wrap using visible text lengths (tags are invisible to libass).

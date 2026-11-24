@@ -1,38 +1,46 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Download, FileText, Trash2, Play, Pause, Volume2, VolumeX, RefreshCw, Clock } from 'lucide-react';
+import { Download, FileText, Trash2, Play, Pause, Volume2, VolumeX, RefreshCw, Clock, Sliders } from 'lucide-react';
+import ClipCustomizer from './ClipCustomizer';
 
-export default function ResultCard({ clip = {}, jobId = '', onDelete, jobDate = '' }) {
+export default function ResultCard({ clip = {}, jobId = '', onDelete, onClipUpdated, jobDate = '' }) {
+  const [currentClip, setCurrentClip] = useState(clip);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [progressPct, setProgressPct] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const [isCustomizing, setIsCustomizing] = useState(false);
   const videoRef = useRef(null);
 
-  const rawFilename = clip.filename || (clip.video ? clip.video.split('/').pop() : `${clip.slug || 'clip'}.mp4`);
+  useEffect(() => {
+    setCurrentClip(clip);
+  }, [clip]);
+
+  const rawFilename = currentClip.filename || (currentClip.video ? currentClip.video.split('/').pop() : `${currentClip.slug || 'clip'}.mp4`);
   const filename = rawFilename.endsWith('.mp4') ? rawFilename : `${rawFilename}.mp4`;
   const srtFilename = filename.replace(/\.mp4$/i, '.srt');
 
-  const resolvedJobId = jobId || clip.jobId || '';
-  const rawVideo = clip.url || clip.video || '';
-  const videoUrl = rawVideo.startsWith('http') || rawVideo.startsWith('/media')
+  const resolvedJobId = jobId || currentClip.jobId || '';
+  const rawVideo = currentClip.url || currentClip.video || '';
+  const baseVideoUrl = rawVideo.startsWith('http') || rawVideo.startsWith('/media')
     ? rawVideo
-    : `/media/${resolvedJobId}/${clip.video || `clips/${filename}`}`;
+    : `/media/${resolvedJobId}/${currentClip.video || `clips/${filename}`}`;
+  const videoUrl = retryKey > 0 ? `${baseVideoUrl}?t=${retryKey}` : baseVideoUrl;
 
-  const rawSrt = clip.srt_url || clip.srt || '';
+  const rawSrt = currentClip.srt_url || currentClip.srt || '';
   const srtUrl = rawSrt.startsWith('http') || rawSrt.startsWith('/media')
     ? rawSrt
-    : `/media/${resolvedJobId}/${clip.srt || `clips/${srtFilename}`}`;
+    : `/media/${resolvedJobId}/${currentClip.srt || `clips/${srtFilename}`}`;
 
-  const rawThumb = clip.thumb_url || clip.thumb || '';
+  const rawThumb = currentClip.thumb_url || currentClip.thumb || '';
   const thumbUrl = rawThumb ? (rawThumb.startsWith('http') || rawThumb.startsWith('/media') ? rawThumb : `/media/${resolvedJobId}/${rawThumb}`) : null;
 
-  const durationSec = clip.duration
-    ? Math.round(clip.duration)
-    : Math.round((clip.end || 0) - (clip.start || 0));
-  const score = Math.round(clip.score || clip.virality_score || 75);
-  const displayTitle = clip.title || clip.hook || clip.text || filename.replace(/\.mp4$/i, '');
+  const durationSec = currentClip.duration
+    ? Math.round(currentClip.duration)
+    : Math.round((currentClip.end || 0) - (currentClip.start || 0));
+  const score = Math.round(currentClip.score || currentClip.virality_score || 75);
+  const displayTitle = currentClip.title || currentClip.hook || currentClip.text || filename.replace(/\.mp4$/i, '');
 
   // Reset state if videoUrl changes
   useEffect(() => {
@@ -226,6 +234,16 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete, jobDate = 
         <div className="flex items-center gap-2 pt-2 border-t border-white/5">
           <button
             type="button"
+            onClick={() => setIsCustomizing(true)}
+            className="py-2 px-3 bg-white/5 hover:bg-[#ba6238]/20 hover:text-[#ba6238] text-white/90 rounded-xl text-xs font-semibold border border-white/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+            title="Customize captions style, placement & trimming"
+          >
+            <Sliders size={13} className="shrink-0 text-[#ba6238]" />
+            <span>Edit</span>
+          </button>
+
+          <button
+            type="button"
             onClick={(e) => handleDownload(e, videoUrl, filename)}
             className="flex-1 py-2 px-3 bg-gradient-to-r from-[#ba6238] to-[#d47345] hover:from-[#c96a3d] hover:to-[#df7d4f] text-white rounded-xl text-xs font-semibold shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer truncate"
             title="Download MP4 video"
@@ -237,7 +255,7 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete, jobDate = 
           <button
             type="button"
             onClick={(e) => handleDownload(e, srtUrl, srtFilename)}
-            className="py-2 px-3 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white rounded-xl text-xs font-mono font-medium border border-white/10 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+            className="py-2 px-2.5 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white rounded-xl text-xs font-mono font-medium border border-white/10 transition-colors flex items-center justify-center cursor-pointer shrink-0"
             title="Download Subtitles (.SRT)"
           >
             SRT
@@ -254,6 +272,21 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete, jobDate = 
           </button>
         </div>
       </div>
+
+      {/* Clip Customization Studio Modal */}
+      {isCustomizing && (
+        <ClipCustomizer
+          clip={currentClip}
+          jobId={resolvedJobId}
+          isOpen={isCustomizing}
+          onClose={() => setIsCustomizing(false)}
+          onSave={(updated) => {
+            setCurrentClip(updated);
+            setRetryKey((k) => k + 1);
+            if (onClipUpdated) onClipUpdated(updated);
+          }}
+        />
+      )}
     </div>
   );
 }
