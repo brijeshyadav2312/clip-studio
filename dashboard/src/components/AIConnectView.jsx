@@ -101,7 +101,7 @@ export default function AIConnectView({ onAIUpdated }) {
                 onClick={() => setProvider('gemini')}
                 className={`p-4 rounded-xl border text-left transition-colors flex flex-col justify-between cursor-pointer ${
                   provider === 'gemini'
-                    ? 'border-[#ba6238] bg-[#ba6238]/10'
+                    ? 'border-[#ba6238] bg-[#a8542c]/10'
                     : 'border-rule bg-paper2/50 hover:bg-paper2 text-muted'
                 }`}
               >
@@ -122,7 +122,7 @@ export default function AIConnectView({ onAIUpdated }) {
                 onClick={() => setProvider('openai')}
                 className={`p-4 rounded-xl border text-left transition-colors flex flex-col justify-between cursor-pointer ${
                   provider === 'openai'
-                    ? 'border-[#ba6238] bg-[#ba6238]/10'
+                    ? 'border-[#ba6238] bg-[#a8542c]/10'
                     : 'border-rule bg-paper2/50 hover:bg-paper2 text-muted'
                 }`}
               >
@@ -143,7 +143,7 @@ export default function AIConnectView({ onAIUpdated }) {
                 onClick={() => setProvider('heuristic')}
                 className={`p-4 rounded-xl border text-left transition-colors flex flex-col justify-between cursor-pointer ${
                   provider === 'heuristic'
-                    ? 'border-[#ba6238] bg-[#ba6238]/10'
+                    ? 'border-[#ba6238] bg-[#a8542c]/10'
                     : 'border-rule bg-paper2/50 hover:bg-paper2 text-muted'
                 }`}
               >

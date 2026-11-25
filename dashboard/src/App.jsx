@@ -8,11 +8,12 @@ import AIConnectView from './components/AIConnectView';
 import SettingsView from './components/SettingsView';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotFoundView from './components/NotFoundView';
-import { AlertCircle, Film, Sparkles, Cookie, Activity, X, Github, Star, Plus } from 'lucide-react';
+import { AlertCircle, Film, Sparkles, Cookie, Activity, X, Github, Star, Plus, Menu } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('generator'); // 'generator' | 'customizer' | 'history' | 'aiconnect' | 'settings'
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sidebarPosition, setSidebarPosition] = useState(
     () => localStorage.getItem('clip_sidebar_pos') || 'left'
   );
@@ -351,6 +352,17 @@ export default function App() {
           setCollapsed={setSidebarCollapsed}
           sidebarPosition={sidebarPosition}
           setSidebarPosition={updateSidebarPosition}
+          mobileOpen={mobileNavOpen}
+          onClose={() => setMobileNavOpen(false)}
+          forceExpanded={mobileNavOpen}
+        />
+      )}
+
+      {mobileNavOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
         />
       )}
 
@@ -360,6 +372,15 @@ export default function App() {
         <header className="h-16 px-4 sm:px-6 border-b border-rule bg-paper/90 backdrop-blur-md flex items-center justify-between shrink-0 z-20">
           {/* Left: Page Title & New Project Action Button */}
           <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              className="md:hidden p-2 -ml-1 rounded-xl bg-paper2 hover:bg-paper3 border border-rule text-muted hover:text-ink transition-colors cursor-pointer shrink-0"
+              title="Open menu"
+              aria-label="Open menu"
+            >
+              <Menu size={18} />
+            </button>
             <h2 className="font-bold text-ink text-base sm:text-lg tracking-tight truncate max-w-[200px] sm:max-w-md">
               {getPageTitle()}
             </h2>
@@ -369,7 +390,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleCancelProject}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#ba6238]/40 hover:border-[#ba6238] bg-[#ba6238]/10 hover:bg-[#ba6238]/20 text-ink text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#ba6238]/40 hover:border-[#ba6238] bg-[#a8542c]/10 hover:bg-[#a8542c]/20 text-ink text-xs font-semibold transition-colors cursor-pointer shrink-0"
                 title="Terminate active generation and start fresh"
               >
                 <Plus size={14} className="text-[#ba6238] shrink-0" />
@@ -525,6 +546,9 @@ export default function App() {
           setCollapsed={setSidebarCollapsed}
           sidebarPosition={sidebarPosition}
           setSidebarPosition={updateSidebarPosition}
+          mobileOpen={mobileNavOpen}
+          onClose={() => setMobileNavOpen(false)}
+          forceExpanded={mobileNavOpen}
         />
       )}
     </div>

@@ -12,6 +12,7 @@ import {
   Mail,
   Film,
   Sliders,
+  X,
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -21,6 +22,9 @@ export default function Sidebar({
   setCollapsed,
   sidebarPosition = 'left',
   setSidebarPosition,
+  mobileOpen = false,
+  onClose = null,
+  forceExpanded = false,
 }) {
   const navItems = [
     { id: 'generator', label: 'Clip Generator', icon: Scissors },
@@ -30,30 +34,45 @@ export default function Sidebar({
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
+  const isCollapsed = collapsed && !forceExpanded;
+
   const CollapseIcon =
     sidebarPosition === 'left'
-      ? collapsed
+      ? isCollapsed
         ? ChevronRight
         : ChevronLeft
-      : collapsed
+      : isCollapsed
       ? ChevronLeft
       : ChevronRight;
 
+  const go = (id) => {
+    setActiveTab(id);
+    if (onClose) onClose();
+  };
+
   return (
     <aside
-      className={`bg-[#0d0f14] border-rule flex flex-col justify-between transition-all duration-200 ease-in-out z-30 shrink-0 select-none ${
-        sidebarPosition === 'right' ? 'border-l' : 'border-r'
-      } ${collapsed ? 'w-[72px]' : 'w-[250px]'}`}
+      className={`bg-[#0d0f14] border-rule flex flex-col justify-between transition-transform duration-200 ease-in-out shrink-0 select-none fixed inset-y-0 z-50 ${
+        sidebarPosition === 'right' ? 'border-l right-0' : 'border-r left-0'
+      } w-[250px] max-w-[85vw] ${
+        mobileOpen
+          ? 'translate-x-0'
+          : sidebarPosition === 'right'
+          ? 'translate-x-full md:translate-x-0'
+          : '-translate-x-full md:translate-x-0'
+      } md:static md:z-30 md:max-w-none md:transition-all md:duration-200 ${
+        isCollapsed ? 'md:w-[72px]' : 'md:w-[250px]'
+      }`}
     >
       {/* Top Brand Header (Aligned h-16 = 64px) */}
       <div>
         <div className="h-16 border-b border-rule flex items-center px-3.5">
-          {collapsed ? (
+          {isCollapsed ? (
             <div className="w-full flex items-center justify-center">
               <button
                 type="button"
                 onClick={() => setCollapsed(!collapsed)}
-                className="w-10 h-10 flex items-center justify-center rounded-xl bg-paper2 hover:bg-paper3 border border-rule text-muted hover:text-ink transition-colors cursor-pointer"
+                className="w-10 h-10 hidden md:flex items-center justify-center rounded-xl bg-paper2 hover:bg-paper3 border border-rule text-muted hover:text-ink transition-colors cursor-pointer"
                 title="Expand Sidebar"
               >
                 <CollapseIcon size={18} />
@@ -78,10 +97,19 @@ export default function Sidebar({
               <button
                 type="button"
                 onClick={() => setCollapsed(!collapsed)}
-                className="p-1.5 text-muted hover:text-ink hover:bg-paper3 rounded-lg border border-rule transition-colors shrink-0 cursor-pointer"
+                className="p-1.5 text-muted hover:text-ink hover:bg-paper3 rounded-lg border border-rule transition-colors shrink-0 cursor-pointer hidden md:inline-flex"
                 title="Collapse Sidebar"
               >
                 <CollapseIcon size={16} />
+              </button>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 text-muted hover:text-ink hover:bg-paper3 rounded-lg border border-rule transition-colors shrink-0 cursor-pointer md:hidden"
+                title="Close menu"
+              >
+                <X size={16} />
               </button>
             </div>
           )}
@@ -96,13 +124,13 @@ export default function Sidebar({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setActiveTab(item.id)}
-                title={collapsed ? item.label : undefined}
+                onClick={() => go(item.id)}
+                title={isCollapsed ? item.label : undefined}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
                   active
                     ? 'bg-paper3 text-ink border border-rule2 font-semibold'
                     : 'text-muted hover:text-ink hover:bg-paper2/70 border border-transparent'
-                } ${collapsed ? 'justify-center !px-0' : ''}`}
+                } ${isCollapsed ? 'justify-center !px-0' : ''}`}
               >
                 <Icon
                   size={18}
@@ -110,7 +138,7 @@ export default function Sidebar({
                     active ? 'text-[#ba6238]' : 'text-muted group-hover:text-ink'
                   }`}
                 />
-                {!collapsed && <span className="truncate min-w-0">{item.label}</span>}
+                {!isCollapsed && <span className="truncate min-w-0">{item.label}</span>}
               </button>
             );
           })}
@@ -123,51 +151,51 @@ export default function Sidebar({
           href="https://github.com/brijeshyadav2312/clip-studio#readme"
           target="_blank"
           rel="noopener noreferrer"
-          title={collapsed ? 'Landing Page' : undefined}
+          title={isCollapsed ? 'Landing Page' : undefined}
           className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted hover:text-ink hover:bg-paper2 transition-colors ${
-            collapsed ? 'justify-center !px-0' : ''
+            isCollapsed ? 'justify-center !px-0' : ''
           }`}
         >
           <Globe size={15} className="shrink-0 text-muted" />
-          {!collapsed && <span className="truncate min-w-0">Landing Page</span>}
+          {!isCollapsed && <span className="truncate min-w-0">Landing Page</span>}
         </a>
 
         <a
           href="https://github.com/brijeshyadav2312/clip-studio"
           target="_blank"
           rel="noopener noreferrer"
-          title={collapsed ? 'Open Source' : undefined}
+          title={isCollapsed ? 'Open Source' : undefined}
           className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted hover:text-ink hover:bg-paper2 transition-colors ${
-            collapsed ? 'justify-center !px-0' : ''
+            isCollapsed ? 'justify-center !px-0' : ''
           }`}
         >
           <Github size={15} className="shrink-0 text-muted" />
-          {!collapsed && <span className="truncate min-w-0">Open Source</span>}
+          {!isCollapsed && <span className="truncate min-w-0">Open Source</span>}
         </a>
 
         <button
           type="button"
-          onClick={() => setActiveTab('aiconnect')}
-          title={collapsed ? 'Plans & Pricing' : undefined}
+          onClick={() => go('aiconnect')}
+          title={isCollapsed ? 'Plans & Pricing' : undefined}
           className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted hover:text-ink hover:bg-paper2 transition-colors cursor-pointer ${
-            collapsed ? 'justify-center !px-0' : ''
+            isCollapsed ? 'justify-center !px-0' : ''
           }`}
         >
           <Sparkles size={15} className="text-[#ba6238] shrink-0" />
-          {!collapsed && <span className="truncate min-w-0">Plans & Pricing</span>}
+          {!isCollapsed && <span className="truncate min-w-0">Plans & Pricing</span>}
         </button>
 
         <a
           href="https://github.com/brijeshyadav2312/clip-studio/issues"
           target="_blank"
           rel="noopener noreferrer"
-          title={collapsed ? 'Feedback & Support' : undefined}
+          title={isCollapsed ? 'Feedback & Support' : undefined}
           className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted hover:text-ink hover:bg-paper2 transition-colors ${
-            collapsed ? 'justify-center !px-0' : ''
+            isCollapsed ? 'justify-center !px-0' : ''
           }`}
         >
           <Mail size={15} className="shrink-0 text-muted" />
-          {!collapsed && <span className="truncate min-w-0">Support & Feedback</span>}
+          {!isCollapsed && <span className="truncate min-w-0">Support & Feedback</span>}
         </a>
       </div>
     </aside>

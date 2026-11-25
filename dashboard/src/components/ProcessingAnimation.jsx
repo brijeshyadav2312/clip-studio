@@ -152,7 +152,7 @@ export default function ProcessingAnimation({
               {/* Minimal Clean Top Badges Overlay (NO duplicate percentages) */}
               <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
                 <span className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-[10.5px] font-mono text-white/90 border border-white/10 shadow flex items-center gap-1.5">
-                  <span className={`w-1.5 h-1.5 rounded-full ${isDone ? 'bg-emerald-400' : isError ? 'bg-red-400' : 'bg-[#ba6238] animate-ping'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${isDone ? 'bg-emerald-400' : isError ? 'bg-red-400' : 'bg-[#a8542c] animate-ping'}`} />
                   <span>{isError ? 'Stopped' : isDone ? 'Analyzed' : 'Live Analysis'}</span>
                 </span>
 
@@ -232,7 +232,7 @@ export default function ProcessingAnimation({
 
                       <div className="flex items-center gap-1.5 shrink-0">
                         {item.progressText && (
-                          <span className="text-[10.5px] text-[#ba6238] font-bold bg-[#ba6238]/10 px-1.5 py-0.5 rounded border border-[#ba6238]/20">
+                          <span className="text-[10.5px] text-[#ba6238] font-bold bg-[#a8542c]/10 px-1.5 py-0.5 rounded border border-[#ba6238]/20">
                             {item.progressText}
                           </span>
                         )}

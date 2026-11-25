@@ -233,7 +233,7 @@ export default function ResultCard({ clip = {}, jobId = '', onDelete, onEdit, on
           <button
             type="button"
             onClick={() => onEdit && onEdit(currentClip, resolvedJobId)}
-            className="py-2 px-3 bg-white/5 hover:bg-[#ba6238]/20 hover:text-[#ba6238] text-white/90 rounded-xl text-xs font-semibold border border-white/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+            className="py-2 px-3 bg-white/5 hover:bg-[#a8542c]/20 hover:text-[#ba6238] text-white/90 rounded-xl text-xs font-semibold border border-white/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
             title="Open in Customizer Studio (Live changes)"
           >
             <Sliders size={13} className="shrink-0 text-[#ba6238]" />

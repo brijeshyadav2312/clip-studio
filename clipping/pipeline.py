@@ -348,15 +348,16 @@ def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) ->
     if not source_file or not source_file.exists():
         # Prefer the caption-free clean master (if the raw source is gone) so a
         # style change can still replace the previous burn instead of stacking.
-        for candidate in (
-            job_dir / "clips" / f"{target_clip['slug']}.clean.mp4",
-            job_dir / "clips" / f"{target_clip['slug']}.mp4",
-        ):
-            if candidate.exists():
-                source_file = candidate
-                break
-        if not source_file:
-            raise ToolError("Source media file is no longer available on disk.")
+        clean_master = job_dir / "clips" / f"{target_clip['slug']}.clean.mp4"
+        if clean_master.exists():
+            source_file = clean_master
+        else:
+            # Never re-render from the burned clip: that stacks the old captions
+            # under the new ones.
+            raise ToolError(
+                "The original video for this clip is no longer on disk, so its captions "
+                "cannot be replaced. Re-run the job to edit this clip."
+            )
 
     # Time bounds
     start = float(custom_options.get("start", target_clip["start"]))
@@ -422,6 +423,128 @@ def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) ->
     manifest["clips"][target_idx] = target_clip
     write_json(manifest_path, manifest)
     return target_clip
+
+
+def _resolve_clip(manifest: dict, clip_identifier: str) -> tuple[int, dict | None]:
+    for i, c in enumerate(manifest.get("clips", [])):
+        if (
+            c.get("slug") == clip_identifier
+            or c.get("filename") == clip_identifier
+            or Path(c.get("video", "")).name == clip_identifier
+            or str(i) == clip_identifier
+        ):
+            return i, c
+    return -1, None
+
+
+def _find_source(job_dir: Path, manifest: dict) -> Path | None:
+    src_meta = manifest.get("source", {}).get("file")
+    if src_meta and (job_dir / src_meta).exists():
+        return job_dir / src_meta
+    for p in job_dir.iterdir():
+        if (
+            p.is_file()
+            and p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov")
+            and not p.name.startswith("clip")
+            and ".clean." not in p.name
+        ):
+            return p
+    return None
+
+
+def clip_caption_plan(job_dir: Path, clip_identifier: str, custom_options: dict | None = None) -> dict:
+    """Caption events for the editor, built by the same code that burns them."""
+    manifest_path = job_dir / "job.json"
+    if not manifest_path.exists():
+        raise ToolError("Job not found")
+    manifest = read_json(manifest_path)
+    _, clip = _resolve_clip(manifest, clip_identifier)
+    if clip is None:
+        raise ToolError(f"Clip '{clip_identifier}' not found in job")
+
+    options = custom_options or {}
+    settings = Settings(**(manifest.get("options") or {}))
+    layout = (clip.get("reframe") or {}).get("mode") or settings.layout
+
+    start = float(clip["start"])
+    end = float(clip["end"])
+    words: list[dict] = []
+    transcript_path = job_dir / "transcript.json"
+    if transcript_path.exists():
+        transcript = read_json(transcript_path)
+        words = highlights._words_in(transcript.get("segments") or [], start, end)
+
+    hook = options.get("hook", clip.get("hook"))
+    plan = captions.caption_plan(
+        words, start, end, settings,
+        custom_options=options,
+        layout=layout,
+        censor=bool(options.get("censor", False)),
+        hook=hook or None,
+    )
+    clean = job_dir / "clips" / f"{clip['slug']}.clean.mp4"
+    plan["clip"] = {
+        "slug": clip["slug"],
+        "start": start,
+        "end": end,
+        "has_clean_master": clean.exists(),
+    }
+    return plan
+
+
+def ensure_clean_master(job_dir: Path, clip_identifier: str) -> dict:
+    """Return a clip with a caption-free master, producing one if it is missing.
+
+    Clips rendered before clean masters existed (or whose master failed) only
+    have captions burned in, so the editor would paint the new style on top of
+    the old one. Re-render the master once, from the original source, and cache
+    it next to the clip.
+    """
+    manifest_path = job_dir / "job.json"
+    if not manifest_path.exists():
+        raise ToolError("Job not found")
+    manifest = read_json(manifest_path)
+    idx, clip = _resolve_clip(manifest, clip_identifier)
+    if clip is None:
+        raise ToolError(f"Clip '{clip_identifier}' not found in job")
+
+    clip_dir = _clip_dir(job_dir)
+    clean = clip_dir / f"{clip['slug']}.clean.mp4"
+    if clean.exists() and clean.stat().st_size > 1024:
+        if clip.get("clean_video") != f"clips/{clean.name}":
+            clip["clean_video"] = f"clips/{clean.name}"
+            manifest["clips"][idx] = clip
+            write_json(manifest_path, manifest)
+        return clip
+
+    source = _find_source(job_dir, manifest)
+    if source is None:
+        raise ToolError(
+            "The original video for this clip is no longer on disk, so a caption-free "
+            "preview cannot be built. Re-run the job to edit this clip."
+        )
+
+    settings = Settings(**(manifest.get("options") or {}))
+    mode = (clip.get("reframe") or {}).get("mode")
+    if mode:
+        settings.layout = mode
+    start, end = float(clip["start"]), float(clip["end"])
+    info = video_info(source)
+    plan = reframe.plan(source, start, end, info, settings)
+    rf_dir = job_dir / "rf"
+    rf_dir.mkdir(exist_ok=True)
+    sendcmd = None
+    if plan["mode"] in ("crop", "dynamic_landscape") and plan.get("samples"):
+        sendcmd = reframe.write_sendcmd(plan["samples"], rf_dir / f"{clip['slug']}.txt")
+
+    render.render_clip(
+        source, clean, job_dir, start, end, info, settings,
+        None, plan, sendcmd, [], clean_out=clean, burn=False,
+    )
+    clip["clean_video"] = f"clips/{clean.name}"
+    manifest["clips"][idx] = clip
+    write_json(manifest_path, manifest)
+    return clip
 
 
 def new_job_dir(job_id: str) -> Path:

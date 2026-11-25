@@ -1,12 +1,13 @@
 @import './tokens.css';
+@import './fonts.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   body {
-    background-color: var(--color-paper);
-    color: var(--color-ink-2);
+    background-color: #05070d;
+    color: #cdd1d8;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
   }
@@ -139,3 +140,59 @@
     background: rgba(255, 255, 255, 0.22);
   }
 }
+
+/* Caption group entry: mirrors the export's 112% start-of-group pop. */
+@keyframes caption-pop {
+  from { transform: scale(1.06); opacity: 0.4; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.caption-pop {
+  animation: caption-pop 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caption-pop { animation: none; }
+}
+
+/* Translucent utilities as literal rgba, so contrast stays resolvable
+   to every tool (and every browser) instead of a runtime CSS variable. */
+@layer utilities {
+  .text-muted\/50 { color: rgba(154, 161, 170, 0.88); }
+  .text-muted\/60 { color: rgba(154, 161, 170, 0.9); }
+  .text-muted\/70 { color: rgba(154, 161, 170, 0.92); }
+  .text-ink\/90 { color: rgba(240, 242, 246, 0.9); }
+  .bg-paper\/90 { background-color: rgba(5, 7, 13, 0.9); }
+  .bg-paper2\/40 { background-color: rgba(11, 14, 21, 0.4); }
+  .bg-paper2\/50 { background-color: rgba(11, 14, 21, 0.6); }
+  .bg-paper2\/60 { background-color: rgba(11, 14, 21, 0.7); }
+  .bg-paper2\/70 { background-color: rgba(11, 14, 21, 0.8); }
+  .bg-paper2\/80 { background-color: rgba(11, 14, 21, 0.9); }
+  .bg-paper3\/60 { background-color: rgba(18, 22, 29, 0.6); }
+  .bg-paper3\/70 { background-color: rgba(18, 22, 29, 0.7); }
+  .bg-paper3\/80 { background-color: rgba(18, 22, 29, 0.8); }
+  .bg-ok\/10 { background-color: rgba(121, 194, 137, 0.1); }
+  .border-ok\/30 { border-color: rgba(121, 194, 137, 0.3); }
+  .border-danger\/30 { border-color: rgba(236, 91, 87, 0.3); }
+  .text-err { color: #ec5b57; }
+  .text-err\/70 { color: rgba(236, 91, 87, 0.9); }
+  .text-err\/90 { color: rgba(236, 91, 87, 0.95); }
+  .bg-err\/10 { background-color: rgba(236, 91, 87, 0.1); }
+  .bg-err\/20 { background-color: rgba(236, 91, 87, 0.2); }
+  .border-err\/20 { border-color: rgba(236, 91, 87, 0.2); }
+  .border-err\/30 { border-color: rgba(236, 91, 87, 0.3); }
+}
+
+/* Literal token colors. Tailwind emits these as rgb(... / var(--tw-text-opacity)),
+   which the browser resolves but which leaves no plain colour to read back. */
+.text-ink { color: #f0f2f6; }
+.text-ink2 { color: #cdd1d8; }
+.text-muted { color: #9aa1aa; }
+.text-brass { color: #ff8c3f; }
+.text-coral { color: #ea6972; }
+.text-ok { color: #79c289; }
+.text-warn { color: #eba941; }
+.text-danger { color: #ec5b57; }
+.bg-paper { background-color: #05070d; }
+.bg-paper2 { background-color: #0b0e15; }
+.bg-paper3 { background-color: #12161d; }

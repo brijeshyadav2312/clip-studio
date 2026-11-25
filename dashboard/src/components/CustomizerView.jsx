@@ -201,9 +201,17 @@ export default function CustomizerView({
   // Inspector active tab: 'presets' | 'placement' | 'typography' | 'hook' | 'framing'
   const [activeTab, setActiveTab] = useState('presets');
 
-  // Words for live subtitle rendering
-  const [words, setWords] = useState([]);
-  const [loadingWords, setLoadingWords] = useState(false);
+  // Caption plan from the server: the same grouping, line breaks and timings
+  // the export burns, so the preview is what you get.
+  const [captionPlan, setCaptionPlan] = useState(null);
+  const [planState, setPlanState] = useState('idle'); // idle | loading | error
+  const [planError, setPlanError] = useState(null);
+  // Caption-free master state: the editor can only overlay text on a clean video.
+  const [cleanState, setCleanState] = useState('idle'); // idle | preparing | ready | unavailable
+  const [cleanError, setCleanError] = useState(null);
+  const [frameWidth, setFrameWidth] = useState(0);
+  const frameRef = useRef(null);
+  const playedOnceRef = useRef(false);
 
   // Live customization parameters (Changes update INSTANTLY in the video overlay)
   const [captionStyle, setCaptionStyle] = useState('hormozi');
@@ -218,6 +226,31 @@ export default function CustomizerView({
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(30);
   const [framing, setFraming] = useState('crop');
+
+  // One source of truth for where captions sit. 1920 is the export height, so
+  // these numbers are read straight off the same grid the burn uses.
+  const marginV = useMemo(() => {
+    if (captionPosition === 'top') return 1500;
+    if (captionPosition === 'divider') return 780;
+    if (captionPosition === 'middle') return 860;
+    if (captionPosition === 'bottom') return 300;
+    return Math.round((verticalPercent / 100) * 1920);
+  }, [captionPosition, verticalPercent]);
+
+  // Sent to the caption planner; identical to what the export sends, which is
+  // what keeps the preview and the burned file in agreement.
+  const styleRequest = useMemo(() => ({
+    caption_style: captionStyle,
+    caption_position: captionPosition,
+    margin_v: marginV,
+    font,
+    font_size: fontSize,
+    primary_color: primaryColor,
+    active_color: activeColor,
+    uppercase,
+    hook,
+  }), [captionStyle, captionPosition, marginV, font, fontSize, primaryColor, activeColor, uppercase, hook]);
+
 
   // Burn-in export state (optional)
   const [isExporting, setIsExporting] = useState(false);
@@ -236,33 +269,102 @@ export default function CustomizerView({
       if (match) applyPreset(match);
     }
 
-    // Fetch word timestamps for this clip
-    let isMounted = true;
-    setLoadingWords(true);
-    const clipSlug = currentClip.slug || String(currentClip.filename).replace(/\.mp4$/i, '');
-    const jobId = currentClip.jobId;
-
-    fetch(`/api/jobs/${jobId}/clips/${clipSlug}/words`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!isMounted) return;
-        if (data && Array.isArray(data.words)) {
-          setWords(data.words);
-        } else {
-          setWords([]);
-        }
-      })
-      .catch(() => {
-        if (isMounted) setWords([]);
-      })
-      .finally(() => {
-        if (isMounted) setLoadingWords(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
   }, [currentClip]);
+
+  // 1. Make sure this clip has a caption-free master. Older clips were rendered
+  //    with captions burned in; overlaying a new style on them showed both.
+  useEffect(() => {
+    if (!currentClip) return;
+    const jobId = currentClip.jobId;
+    const clipSlug = currentClip.slug || String(currentClip.filename).replace(/\.mp4$/i, '');
+    if (!jobId || !clipSlug) {
+      setCleanState('unavailable');
+      return;
+    }
+    if (currentClip.clean_url) {
+      setCleanState('ready');
+      setCleanError(null);
+      return;
+    }
+    let cancelled = false;
+    setCleanState('preparing');
+    setCleanError(null);
+    fetch(`/api/jobs/${jobId}/clips/${clipSlug}/clean`, { method: 'POST' })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Could not prepare the caption-free preview');
+        if (cancelled) return;
+        if (data.clip) setCurrentClip({ ...data.clip, jobId });
+        setCleanState('ready');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setCleanError(err.message);
+        setCleanState('unavailable');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentClip?.slug, currentClip?.jobId, currentClip?.clean_url]);
+
+  // 2. Keep the video clock frame-accurate. `timeupdate` fires ~4x a second,
+  //    which made word highlights visibly trail the audio.
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const v = videoRef.current;
+      if (v && !v.paused) setCurrentTime(v.currentTime);
+      raf = requestAnimationFrame(tick);
+    };
+    if (isPlaying) raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isPlaying]);
+
+  // 3. Measure the frame so caption type is sized against the 1080px export grid.
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect?.width || 0;
+      if (w) setFrameWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [currentClip]);
+
+  // 4. Ask the server for caption events whenever the style changes.
+  useEffect(() => {
+    if (!currentClip || cleanState !== 'ready') return;
+    const jobId = currentClip.jobId;
+    const clipSlug = currentClip.slug || String(currentClip.filename).replace(/\.mp4$/i, '');
+    if (!jobId || !clipSlug) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setPlanState('loading');
+      fetch(`/api/jobs/${jobId}/clips/${clipSlug}/caption-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(styleRequest),
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || 'Could not build caption preview');
+          setCaptionPlan(data);
+          setPlanState('idle');
+          setPlanError(null);
+        })
+        .catch((err) => {
+          if (err.name === 'AbortError') return;
+          setPlanError(err.message);
+          setPlanState('error');
+        });
+    }, 180);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [currentClip?.slug, currentClip?.jobId, cleanState, styleRequest]);
 
   const rawFilename = currentClip?.filename || `${currentClip?.slug || 'clip'}.mp4`;
   const filename = rawFilename.endsWith('.mp4') ? rawFilename : `${rawFilename}.mp4`;
@@ -343,16 +445,10 @@ export default function CustomizerView({
     const clipSlug = currentClip.slug || String(currentClip.filename).replace(/\.mp4$/i, '');
     const jobId = currentClip.jobId;
 
-    let margin_v = Math.round((verticalPercent / 100) * 1920);
-    if (captionPosition === 'top') margin_v = 1500;
-    else if (captionPosition === 'divider') margin_v = 780;
-    else if (captionPosition === 'middle') margin_v = 860;
-    else if (captionPosition === 'bottom') margin_v = 300;
-
     const payload = {
       caption_style: captionStyle,
       caption_position: captionPosition,
-      margin_v: margin_v,
+      margin_v: marginV,
       font: font,
       font_size: fontSize,
       primary_color: primaryColor,
@@ -384,59 +480,50 @@ export default function CustomizerView({
     }
   };
 
-  // Compute active caption group based on current video timestamp
-  const activeCaptionGroup = useMemo(() => {
-    if (!words || words.length === 0) {
-      // Fallback: If no word timings exist, generate dynamic mock subtitle from hook/title
-      const text = currentClip?.title || currentClip?.hook || 'Clip Studio Live Subtitles';
-      const mockWords = text.split(' ').map((w, idx) => ({
-        word: w,
-        start: idx * 0.45,
-        end: idx * 0.45 + 0.45,
-      }));
-      const cycleTime = currentTime % (mockWords.length * 0.45 || 3);
-      return mockWords.filter((w) => cycleTime >= w.start - 0.1 && cycleTime <= w.end + 0.5);
-    }
+  // Active caption event + active word, straight from the server plan.
+  const activeGroup = useMemo(() => {
+    if (!captionPlan?.groups?.length) return null;
+    return (
+      captionPlan.groups.find(
+        (grp) => currentTime >= grp.start - 0.03 && currentTime < grp.end + 0.06
+      ) || null
+    );
+  }, [captionPlan, currentTime]);
 
-    const currentPreset = PRESETS.find((p) => p.id === captionStyle) || PRESETS[0];
-    const maxWords = currentPreset.wordsPerGroup || 3;
+  const activeWords = useMemo(() => {
+    if (!activeGroup) return null;
+    const flat = activeGroup.lines.flat();
+    let activeIdx = flat.findIndex((w) => currentTime >= w.start - 0.02 && currentTime < w.end);
+    if (activeIdx < 0) activeIdx = 0;
+    return { flat, activeIdx };
+  }, [activeGroup, currentTime]);
 
-    const groups = [];
-    let cur = [];
-    for (const w of words) {
-      cur.push(w);
-      if (cur.length >= maxWords || (w.word && /[.!?]$/.test(w.word))) {
-        groups.push(cur);
-        cur = [];
-      }
-    }
-    if (cur.length > 0) groups.push(cur);
+  // Export sizes are authored on a 1080px-wide frame; scale them to the preview.
+  const captionSize = captionPlan && frameWidth
+    ? Math.max(7, (captionPlan.size * frameWidth) / 1080)
+    : 0;
+  const captionOutline = captionPlan && frameWidth
+    ? Math.max(0.8, (captionPlan.outline * frameWidth) / 1080)
+    : 0;
 
-    const active = groups.find((grp) => {
-      const gStart = grp[0].start;
-      const gEnd = grp[grp.length - 1].end;
-      return currentTime >= gStart - 0.05 && currentTime <= gEnd + 0.15;
-    });
-
-    return active || null;
-  }, [words, currentTime, captionStyle, currentClip]);
-
-  // Position style calculation
-  const positionStyle = useMemo(() => {
-    if (captionPosition === 'top') {
-      return { top: '15%', transform: 'translate(-50%, 0)' };
+  // Fall back to shrinking a line that would overflow the frame (missing font
+  // or an unusually long word), instead of letting it spill over the edges.
+  const captionTextRef = useRef(null);
+  const [fitScale, setFitScale] = useState(1);
+  useEffect(() => {
+    setFitScale(1);
+  }, [activeGroup?.start, captionSize, captionPlan?.font]);
+  useEffect(() => {
+    const node = captionTextRef.current;
+    const frame = frameRef.current;
+    if (!node || !frame || !captionSize) return;
+    const available = frame.clientWidth * 0.94;
+    const used = node.scrollWidth;
+    if (used > available && used > 0) {
+      const next = Math.max(0.55, (available / used) * fitScale);
+      if (next < fitScale - 0.01) setFitScale(next);
     }
-    if (captionPosition === 'middle') {
-      return { top: '48%', transform: 'translate(-50%, -50%)' };
-    }
-    if (captionPosition === 'divider') {
-      return { top: '40%', transform: 'translate(-50%, 0)' };
-    }
-    if (captionPosition === 'bottom') {
-      return { bottom: '18%', transform: 'translate(-50%, 0)' };
-    }
-    return { bottom: `${verticalPercent}%`, transform: 'translate(-50%, 0)' };
-  }, [captionPosition, verticalPercent]);
+  }, [activeGroup, captionSize, captionPlan?.font, fitScale]);
 
   // If no clips exist anywhere in the app
   if (!currentClip) {
@@ -528,7 +615,10 @@ export default function CustomizerView({
         {/* Left / Center: Interactive 9:16 Video Player with Live Caption Overlay */}
         <div className="w-full lg:w-[48%] xl:w-[45%] p-4 sm:p-6 bg-[#07090d] flex flex-col items-center justify-center border-b lg:border-b-0 lg:border-r border-rule relative overflow-hidden">
           {/* 9:16 Portrait Canvas Frame */}
-          <div className="relative aspect-[9/16] h-[340px] sm:h-[420px] md:h-[480px] lg:h-[520px] max-h-full rounded-2xl overflow-hidden bg-black border border-white/15 shadow-2xl flex items-center justify-center group">
+          <div
+            ref={frameRef}
+            className="relative aspect-[9/16] w-full max-w-[300px] h-auto sm:max-w-none sm:h-[420px] md:h-[480px] lg:h-[520px] max-h-full rounded-2xl overflow-hidden bg-black border border-white/15 shadow-2xl flex items-center justify-center group"
+          >
             <video
               ref={videoRef}
               src={videoUrl}
@@ -542,242 +632,125 @@ export default function CustomizerView({
               className="w-full h-full object-cover cursor-pointer"
             />
 
-            {/* Hook Headline Overlay (First 3.2s) */}
-            {hook && currentTime < 3.2 && (
-              <div className="absolute top-4 left-3 right-3 z-30 pointer-events-none animate-in fade-in duration-150">
-                <div className="bg-black/85 backdrop-blur-md border border-white/20 rounded-xl px-3 py-2 text-center shadow-2xl">
-                  <p className="text-xs sm:text-sm font-black text-white tracking-wide uppercase line-clamp-2">
-                    {hook}
-                  </p>
+            {/* Hook headline: same box, size and offset as the burn */}
+            {cleanState === 'ready' && captionPlan?.hook && currentTime < captionPlan.hook_end && (
+              <div
+                className="absolute inset-x-0 z-30 pointer-events-none flex justify-center px-2"
+                style={{ top: `${(captionPlan.margin_hook / 1920) * 100}%` }}
+              >
+                <p
+                  className="text-center text-white"
+                  style={{
+                    background: 'rgba(0,0,0,0.6)',
+                    fontFamily: `"${captionPlan.font}", Impact, "Arial Black", sans-serif`,
+                    fontWeight: 900,
+                    fontSize: `${Math.max(8, (72 * frameWidth) / 1080)}px`,
+                    lineHeight: 1.12,
+                    padding: `${Math.max(2, frameWidth * 0.012)}px ${Math.max(4, frameWidth * 0.02)}px`,
+                    maxWidth: '92%',
+                  }}
+                >
+                  {captionPlan.hook.split('\\N').map((part, i) => (
+                    <span key={i} className="block">
+                      {part}
+                    </span>
+                  ))}
+                </p>
+              </div>
+            )}
+
+            {/* Preparing / unavailable notice */}
+            {cleanState === 'preparing' && (
+              <div className="absolute inset-x-0 bottom-4 z-30 flex justify-center px-3">
+                <div className="flex items-center gap-2 rounded-lg bg-black/85 px-3 py-2 text-[11px] text-amber-200 border border-amber-400/30">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  Building a caption-free preview…
+                </div>
+              </div>
+            )}
+            {cleanState === 'unavailable' && (
+              <div className="absolute inset-x-0 bottom-3 z-30 px-3">
+                <div className="rounded-lg bg-black/90 px-3 py-2 text-[11px] leading-snug text-amber-200 border border-amber-400/30">
+                  {cleanError || 'No caption-free preview for this clip.'} Re-run the job to edit its captions.
+                </div>
+              </div>
+            )}
+            {planState === 'loading' && cleanState === 'ready' && (
+              <div className="absolute top-0 inset-x-0 z-30 p-3 flex justify-center pointer-events-none">
+                <span className="rounded-md bg-black/80 px-2.5 py-1 text-[10px] text-white/80 whitespace-nowrap">
+                  Updating captions…
+                </span>
+              </div>
+            )}
+            {planState === 'error' && (
+              <div className="absolute inset-x-0 bottom-3 z-30 px-3">
+                <div className="rounded-lg bg-red-950/90 px-3 py-2 text-[11px] text-red-200 border border-red-500/40">
+                  {planError}
                 </div>
               </div>
             )}
 
-            {/* LIVE DYNAMIC CAPTION OVERLAY (7 Truly Distinct Visual Styles) */}
-            {activeCaptionGroup && activeCaptionGroup.length > 0 && (
+            {/* LIVE CAPTION OVERLAY - rendered from the same plan the export burns */}
+            {cleanState === 'ready' && captionPlan && activeGroup && captionSize > 0 && (
               <div
-                className="absolute left-1/2 w-[90%] z-20 pointer-events-none transition-all duration-150 text-center"
-                style={positionStyle}
+                className="absolute inset-x-0 z-20 pointer-events-none flex justify-center"
+                style={{ bottom: `${(captionPlan.margin_v / 1920) * 100}%` }}
               >
-                {/* 1. HORMOZI 3D POP STYLE */}
-                {captionStyle === 'hormozi' && (
-                  <div
-                    className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5"
-                    style={{
-                      fontFamily: font,
-                      textTransform: uppercase ? 'uppercase' : 'none',
-                    }}
-                  >
-                    {activeCaptionGroup.map((w, idx) => {
-                      const isActive = currentTime >= w.start - 0.05 && currentTime <= w.end + 0.1;
-                      return (
-                        <span
-                          key={idx}
-                          className="inline-block transition-transform duration-100 font-black"
-                          style={{
-                            fontSize: `${Math.max(18, Math.round(fontSize * 0.3))}px`,
-                            color: isActive ? activeColor : primaryColor,
-                            WebkitTextStroke: '2.5px #000000',
-                            textShadow: isActive
-                              ? '0 5px 0 #000, 0 10px 16px rgba(0,0,0,0.9)'
-                              : '0 4px 0 #000, 0 8px 12px rgba(0,0,0,0.8)',
-                            transform: isActive ? 'scale(1.3) rotate(-3deg)' : 'scale(1)',
-                            letterSpacing: '0.01em',
-                          }}
-                        >
-                          {w.word}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* 2. BOXED MARKER / HIGHLIGHTER STYLE */}
-                {captionStyle === 'boxed' && (
-                  <div
-                    className="flex flex-wrap items-center justify-center gap-2"
-                    style={{
-                      fontFamily: font,
-                      textTransform: uppercase ? 'uppercase' : 'none',
-                    }}
-                  >
-                    {activeCaptionGroup.map((w, idx) => {
-                      const isActive = currentTime >= w.start - 0.05 && currentTime <= w.end + 0.1;
-                      return (
-                        <span
-                          key={idx}
-                          className={`inline-block transition-all duration-100 ${
-                            isActive
-                              ? 'bg-[#FFE600] text-black px-3.5 py-1 rounded-xl font-black shadow-2xl scale-110 -rotate-2 border-2 border-black'
-                              : 'bg-black/75 text-white px-2.5 py-1 rounded-lg backdrop-blur-sm border border-white/10 shadow-lg font-bold'
-                          }`}
-                          style={{
-                            fontSize: `${Math.max(16, Math.round(fontSize * 0.26))}px`,
-                          }}
-                        >
-                          {w.word}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* 3. CYBERPUNK NEON GLOW STYLE */}
-                {captionStyle === 'neon' && (
-                  <div
-                    className="inline-block px-4 py-2 rounded-2xl bg-[#0a0f1e]/80 border-2 border-cyan-400/80 shadow-[0_0_25px_rgba(0,255,255,0.4)] backdrop-blur-md"
-                    style={{
-                      fontFamily: font,
-                      textTransform: uppercase ? 'uppercase' : 'none',
-                    }}
-                  >
-                    <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1">
-                      {activeCaptionGroup.map((w, idx) => {
-                        const isActive = currentTime >= w.start - 0.05 && currentTime <= w.end + 0.1;
-                        return (
-                          <span
-                            key={idx}
-                            className="inline-block transition-transform duration-100 font-black"
-                            style={{
-                              fontSize: `${Math.max(16, Math.round(fontSize * 0.28))}px`,
-                              color: isActive ? activeColor : primaryColor,
-                              textShadow: isActive
-                                ? `0 0 15px ${activeColor}, 0 0 30px ${activeColor}, 0 2px 4px #000`
-                                : `0 0 10px ${primaryColor}, 0 2px 4px #000`,
-                              transform: isActive ? 'scale(1.15)' : 'scale(1)',
-                            }}
-                          >
-                            {w.word}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* 4. KARAOKE GLOW STYLE */}
-                {captionStyle === 'karaoke' && (
-                  <div
-                    className="inline-block px-5 py-2.5 rounded-full bg-black/65 backdrop-blur-md border border-white/10 shadow-2xl"
-                    style={{
-                      fontFamily: font,
-                      textTransform: uppercase ? 'uppercase' : 'none',
-                    }}
-                  >
-                    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
-                      {activeCaptionGroup.map((w, idx) => {
-                        const isActive = currentTime >= w.start - 0.05 && currentTime <= w.end + 0.1;
-                        return (
-                          <span
-                            key={idx}
-                            className="inline-block transition-all duration-100"
-                            style={{
-                              fontSize: `${Math.max(15, Math.round(fontSize * 0.25))}px`,
-                              color: isActive ? activeColor : primaryColor,
-                              opacity: isActive ? 1 : 0.45,
-                              fontWeight: isActive ? 900 : 600,
-                              textShadow: isActive ? `0 0 12px ${activeColor}` : 'none',
-                              transform: isActive ? 'scale(1.1)' : 'scale(1)',
-                            }}
-                          >
-                            {w.word}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* 5. COMIC POP-ART STYLE */}
-                {captionStyle === 'comic' && (
-                  <div
-                    className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1"
-                    style={{
-                      fontFamily: 'Comic Sans MS, cursive, sans-serif',
-                      textTransform: uppercase ? 'uppercase' : 'none',
-                    }}
-                  >
-                    {activeCaptionGroup.map((w, idx) => {
-                      const isActive = currentTime >= w.start - 0.05 && currentTime <= w.end + 0.1;
-                      return (
-                        <span
-                          key={idx}
-                          className="inline-block transition-transform duration-100 font-black"
-                          style={{
-                            fontSize: `${Math.max(17, Math.round(fontSize * 0.29))}px`,
-                            color: isActive ? activeColor : primaryColor,
-                            WebkitTextStroke: '3px #000000',
-                            textShadow: '3px 3px 0 #000000',
-                            transform: isActive ? 'scale(1.25) rotate(4deg)' : 'scale(1)',
-                          }}
-                        >
-                          {w.word}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* 6. MRBEAST PUNCH STYLE */}
-                {captionStyle === 'beast' && (
-                  <div
-                    className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5"
-                    style={{
-                      fontFamily: 'Impact',
-                      textTransform: uppercase ? 'uppercase' : 'none',
-                    }}
-                  >
-                    {activeCaptionGroup.map((w, idx) => {
-                      const isActive = currentTime >= w.start - 0.05 && currentTime <= w.end + 0.1;
-                      return (
-                        <span
-                          key={idx}
-                          className="inline-block transition-transform duration-75 font-black uppercase"
-                          style={{
-                            fontSize: `${Math.max(19, Math.round(fontSize * 0.32))}px`,
-                            color: isActive ? activeColor : primaryColor,
-                            WebkitTextStroke: '3px #000000',
-                            textShadow: '0 5px 12px #000000',
-                            transform: isActive ? 'scale(1.22)' : 'scale(1)',
-                            letterSpacing: '0.02em',
-                          }}
-                        >
-                          {w.word}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* 7. CINEMATIC MINIMAL STYLE */}
-                {captionStyle === 'clean' && (
-                  <div
-                    className="inline-block px-5 py-2 rounded-full bg-black/75 backdrop-blur-md border border-white/15 text-white font-medium shadow-2xl"
-                    style={{
-                      fontFamily: font,
-                      textTransform: uppercase ? 'uppercase' : 'none',
-                    }}
-                  >
-                    <div className="flex flex-wrap items-center justify-center gap-x-2">
-                      {activeCaptionGroup.map((w, idx) => {
-                        const isActive = currentTime >= w.start - 0.05 && currentTime <= w.end + 0.1;
-                        return (
-                          <span
-                            key={idx}
-                            className={`inline-block transition-colors ${
-                              isActive ? 'text-amber-400 font-bold underline underline-offset-4' : 'text-white/80'
-                            }`}
-                            style={{
-                              fontSize: `${Math.max(14, Math.round(fontSize * 0.23))}px`,
-                            }}
-                          >
-                            {w.word}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                <div
+                  key={activeGroup.start}
+                  ref={captionTextRef}
+                  className="caption-pop"
+                  style={{
+                    maxWidth: '94%',
+                    textAlign: 'center',
+                    fontFamily: `"${captionPlan.font}", Impact, "Arial Black", sans-serif`,
+                    fontWeight: 900,
+                    fontSize: `${captionSize * fitScale}px`,
+                    lineHeight: 1.04,
+                    letterSpacing: '0.01em',
+                    color: captionPlan.primary_hex,
+                    WebkitTextStroke: `${captionOutline}px #000000`,
+                    paintOrder: 'stroke fill',
+                    textShadow: `0 ${captionOutline * 0.7}px 0 #000000`,
+                  }}
+                >
+                  {activeGroup.lines.map((line, li) => {
+                    const offset = activeGroup.lines
+                      .slice(0, li)
+                      .reduce((n, l) => n + l.length, 0);
+                    return (
+                      <div
+                        key={li}
+                        className="flex items-center justify-center"
+                        style={{ gap: `${captionSize * fitScale * 0.26}px` }}
+                      >
+                        {line.map((word, wi) => {
+                          const isActive = activeWords && offset + wi === activeWords.activeIdx;
+                          return (
+                            <span
+                              key={`${word.start}-${wi}`}
+                              style={{
+                                color: isActive
+                                  ? captionPlan.active_fill_hex
+                                  : captionPlan.primary_hex,
+                                WebkitTextStroke: `${Math.max(
+                                  0.8,
+                                  ((isActive
+                                    ? captionPlan.active_stroke
+                                    : captionPlan.outline) * frameWidth) / 1080
+                                )}px ${isActive ? captionPlan.active_stroke_hex : '#000000'}`,
+                                whiteSpace: 'nowrap',
+                                transition: 'color 90ms linear',
+                              }}
+                            >
+                              {word.text}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -847,7 +820,7 @@ export default function CustomizerView({
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
                     active
-                      ? 'bg-[#ba6238] text-white shadow-md'
+                      ? 'bg-[#a8542c] text-white shadow-md'
                       : 'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white'
                   }`}
                 >
@@ -880,25 +853,25 @@ export default function CustomizerView({
                         onClick={() => applyPreset(p)}
                         className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 ${
                           isSelected
-                            ? 'bg-[#ba6238]/15 border-[#ba6238] ring-1 ring-[#ba6238]'
-                            : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10'
+                            ? 'bg-[#a8542c]/15 border-[#ba6238] ring-1 ring-[#ba6238]'
+                            : 'bg-[rgba(255,255,255,0.03)] hover:bg-white/[0.07] border-white/10'
                         }`}
                       >
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                              <span>{p.name}</span>
-                              {isSelected && <Check size={14} className="text-[#ba6238] stroke-[3]" />}
+                        <div className="min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <h4 className="text-sm font-bold text-white flex items-center gap-2 min-w-0">
+                              <span className="truncate">{p.name}</span>
+                              {isSelected && <Check size={14} className="text-[#ba6238] stroke-[3] shrink-0" />}
                             </h4>
-                            <p className="text-[11px] text-white/60 mt-0.5 leading-snug">{p.desc}</p>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${p.badgeColor}`}>
+                              {p.badge}
+                            </span>
                           </div>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${p.badgeColor}`}>
-                            {p.badge}
-                          </span>
+                          <p className="text-[11px] text-white/60 mt-1 leading-snug">{p.desc}</p>
                         </div>
 
                         {/* Distinct Visual Preview Snippet */}
-                        <div className="p-2 rounded-lg bg-black/40 border border-white/5 flex items-center justify-center gap-2 text-xs font-black">
+                        <div className="p-2 rounded-lg bg-black/40 border border-white/5 flex flex-wrap items-center justify-center gap-2 text-xs font-black overflow-hidden">
                           {p.id === 'hormozi' && (
                             <>
                               <span className="text-white" style={{ WebkitTextStroke: '1px black' }}>YOU</span>
@@ -936,7 +909,7 @@ export default function CustomizerView({
                             </span>
                           )}
                           {p.id === 'clean' && (
-                            <span className="text-white/80 font-medium px-3 py-1 rounded-full bg-white/10 text-[11px]">
+                            <span className="inline-flex items-center justify-center whitespace-nowrap leading-normal text-white/80 font-medium px-3 py-1 rounded-full bg-white/10 text-[11px]">
                               Cinematic subtitle flow
                             </span>
                           )}
@@ -976,7 +949,7 @@ export default function CustomizerView({
                       }}
                       className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                         captionPosition === pos.id
-                          ? 'bg-[#ba6238]/20 border-[#ba6238] text-white font-bold ring-1 ring-[#ba6238]'
+                          ? 'bg-[#a8542c]/20 border-[#ba6238] text-white font-bold ring-1 ring-[#ba6238]'
                           : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
                       }`}
                     >
@@ -986,7 +959,7 @@ export default function CustomizerView({
                   ))}
                 </div>
 
-                <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
+                <div className="p-4 rounded-xl bg-[rgba(255,255,255,0.03)] border border-white/10 space-y-3">
                   <div className="flex items-center justify-between text-xs font-semibold text-white">
                     <span>Continuous Vertical Position</span>
                     <span className="font-mono text-[#ba6238] font-bold">{verticalPercent}% from bottom</span>
@@ -1051,7 +1024,7 @@ export default function CustomizerView({
                 {/* Color Palettes */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Active Highlight Color */}
-                  <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2.5">
+                  <div className="p-3.5 rounded-xl bg-[rgba(255,255,255,0.03)] border border-white/10 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                         <Palette size={13} className="text-[#ba6238]" />
@@ -1077,7 +1050,7 @@ export default function CustomizerView({
                   </div>
 
                   {/* Base Text Color */}
-                  <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2.5">
+                  <div className="p-3.5 rounded-xl bg-[rgba(255,255,255,0.03)] border border-white/10 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                         <Palette size={13} className="text-white/60" />
@@ -1104,7 +1077,7 @@ export default function CustomizerView({
                 </div>
 
                 {/* Uppercase Switch */}
-                <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between">
+                <div className="p-3.5 rounded-xl bg-[rgba(255,255,255,0.03)] border border-white/10 flex items-center justify-between">
                   <div>
                     <p className="text-xs font-bold text-white">UPPERCASE Text</p>
                     <p className="text-[11px] text-white/50">
@@ -1115,7 +1088,7 @@ export default function CustomizerView({
                     type="button"
                     onClick={() => setUppercase(!uppercase)}
                     className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
-                      uppercase ? 'bg-[#ba6238]' : 'bg-white/20'
+                      uppercase ? 'bg-[#a8542c]' : 'bg-white/20'
                     }`}
                   >
                     <span
@@ -1148,7 +1121,7 @@ export default function CustomizerView({
                   />
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
+                <div className="p-3.5 rounded-xl bg-[rgba(255,255,255,0.03)] border border-white/10 space-y-2">
                   <span className="text-xs font-bold text-white">Hook Preview</span>
                   <div className="p-3 rounded-xl bg-black/70 border border-white/15 text-center">
                     <p className="text-xs font-black text-white uppercase tracking-wider line-clamp-2">
@@ -1199,7 +1172,7 @@ export default function CustomizerView({
                       onClick={() => setFraming(f.id)}
                       className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
                         framing === f.id
-                          ? 'bg-[#ba6238]/20 border-[#ba6238] text-white ring-1 ring-[#ba6238]'
+                          ? 'bg-[#a8542c]/20 border-[#ba6238] text-white ring-1 ring-[#ba6238]'
                           : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
                       }`}
                     >
@@ -1250,7 +1223,7 @@ export default function CustomizerView({
               type="button"
               disabled={isExporting}
               onClick={handleExportBurnedIn}
-              className="px-4 py-2 rounded-xl bg-[#ba6238]/20 hover:bg-[#ba6238]/30 border border-[#ba6238]/50 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-[#a8542c]/20 hover:bg-[#a8542c]/30 border border-[#ba6238]/50 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
               title="Permanently bake customized ASS subtitles into the MP4"
             >
               {isExporting ? (

@@ -87,7 +87,7 @@ export default function SettingsView({
               Settings & Customization
             </h1>
           </div>
-          <p className="text-xs sm:text-sm text-muted mt-1 truncate">
+          <p className="text-xs sm:text-sm text-muted mt-1 max-w-3xl">
             Configure subtitle generation, camera framing, layout styles, and YouTube cookies.
           </p>
         </div>
@@ -312,7 +312,7 @@ export default function SettingsView({
                 type="button"
                 onClick={() => setSidebarPosition('left')}
                 className={`px-3.5 py-1.5 text-xs sm:text-sm rounded-lg font-medium transition-colors cursor-pointer ${
-                  sidebarPosition === 'left' ? 'bg-[#ba6238] text-white font-bold' : 'text-muted hover:text-ink'
+                  sidebarPosition === 'left' ? 'bg-[#a8542c] text-white font-bold' : 'text-muted hover:text-ink'
                 }`}
               >
                 Left
@@ -321,7 +321,7 @@ export default function SettingsView({
                 type="button"
                 onClick={() => setSidebarPosition('right')}
                 className={`px-3.5 py-1.5 text-xs sm:text-sm rounded-lg font-medium transition-colors cursor-pointer ${
-                  sidebarPosition === 'right' ? 'bg-[#ba6238] text-white font-bold' : 'text-muted hover:text-ink'
+                  sidebarPosition === 'right' ? 'bg-[#a8542c] text-white font-bold' : 'text-muted hover:text-ink'
                 }`}
               >
                 Right
@@ -332,7 +332,7 @@ export default function SettingsView({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-rule pt-4">
             <div className="min-w-0">
               <span className="text-xs sm:text-sm font-medium text-ink block truncate">Live Analysis Display</span>
-              <span className="text-xs text-muted block mt-0.5 truncate">
+              <span className="text-xs text-muted block mt-0.5 leading-snug">
                 Show live video playback, video frame thumbnail, or holographic scan during processing.
               </span>
             </div>
@@ -342,7 +342,7 @@ export default function SettingsView({
                 type="button"
                 onClick={() => setPreviewMode('video_autoplay')}
                 className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors cursor-pointer ${
-                  previewMode === 'video_autoplay' ? 'bg-[#ba6238] text-white font-bold' : 'text-muted hover:text-ink'
+                  previewMode === 'video_autoplay' ? 'bg-[#a8542c] text-white font-bold' : 'text-muted hover:text-ink'
                 }`}
               >
                 Autoplay Video
@@ -351,7 +351,7 @@ export default function SettingsView({
                 type="button"
                 onClick={() => setPreviewMode('thumbnail')}
                 className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors cursor-pointer ${
-                  previewMode === 'thumbnail' ? 'bg-[#ba6238] text-white font-bold' : 'text-muted hover:text-ink'
+                  previewMode === 'thumbnail' ? 'bg-[#a8542c] text-white font-bold' : 'text-muted hover:text-ink'
                 }`}
               >
                 Thumbnail
@@ -360,7 +360,7 @@ export default function SettingsView({
                 type="button"
                 onClick={() => setPreviewMode('cyber_wireframe')}
                 className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors cursor-pointer ${
-                  previewMode === 'cyber_wireframe' ? 'bg-[#ba6238] text-white font-bold' : 'text-muted hover:text-ink'
+                  previewMode === 'cyber_wireframe' ? 'bg-[#a8542c] text-white font-bold' : 'text-muted hover:text-ink'
                 }`}
               >
                 Hologram

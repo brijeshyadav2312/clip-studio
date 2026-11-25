@@ -46,6 +46,7 @@ def render_clip(
     sendcmd_path: Path | None = None,
     muted: list[tuple[float, float]] | None = None,
     clean_out: Path | None = None,
+    burn: bool = True,
 ) -> Path:
     """Render a trimmed, reframed clip with captions burned in.
 
@@ -53,10 +54,13 @@ def render_clip(
     framing is written in the same ffmpeg pass. The editor previews that master
     and draws captions as a live overlay, so a style change never shows the
     previous burn underneath; burned captions exist only in ``out_path``.
+
+    ``burn=False`` writes only the clean master (used to backfill a missing
+    master for a clip that was rendered before clean masters existed).
     """
     duration = max(0.5, end - start)
     muted = muted or []
-    ass = _filter_path(ass_path, work_dir)
+    ass = _filter_path(ass_path, work_dir) if ass_path is not None else ""
     fps = settings.fps
 
     if plan["mode"] == "crop" and sendcmd_path is not None:
@@ -176,7 +180,7 @@ def render_clip(
     # touches the subtitles filter, so no old style can linger under a new one.
     parts = [pre]
     audio = _audio_chain(info.get("has_audio", True), muted, duration)
-    if clean_out is not None:
+    if clean_out is not None and burn:
         parts += [
             "[vpre]split=2[vsub][vcln]",
             f"[vsub]subtitles={ass},fps={fps},format=yuv420p[v]",
@@ -184,6 +188,9 @@ def render_clip(
         ]
         audio += ";[a]asplit=2[a1][a2]"
         maps = [("[v]", out_path, "[a1]"), ("[vclean]", clean_out, "[a2]")]
+    elif clean_out is not None:
+        parts.append(f"[vpre]fps={fps},format=yuv420p[vclean]")
+        maps = [("[vclean]", clean_out, "[a]")]
     else:
         parts.append(f"[vpre]subtitles={ass},fps={fps},format=yuv420p[v]")
         maps = [("[v]", out_path, "[a]")]
@@ -217,10 +224,14 @@ def render_clip(
             static["samples"] = []
             return render_clip(
                 source, out_path, work_dir, start, end, info, settings,
-                ass_path, static, None, muted, clean_out=clean_out,
+                ass_path, static, None, muted, clean_out=clean_out, burn=burn,
             )
         raise exc
 
+    if not burn:
+        if clean_out is None or not clean_out.exists() or clean_out.stat().st_size < 1024:
+            raise ToolError(f"Render produced no usable output for {clean_out.name if clean_out else 'clean master'}")
+        return clean_out
     if not out_path.exists() or out_path.stat().st_size < 1024:
         raise ToolError(f"Render produced no usable output for {out_path.name}")
     if clean_out is not None and (not clean_out.exists() or clean_out.stat().st_size < 1024):

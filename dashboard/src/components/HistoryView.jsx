@@ -186,7 +186,7 @@ export default function HistoryView({ jobs = [], onRefresh, onDeleteAll, onNavig
               {localClips.length} {localClips.length === 1 ? 'Clip' : 'Clips'}
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-muted mt-1 truncate">
+          <p className="text-xs sm:text-sm text-muted mt-1 max-w-3xl">
             Browse, preview, download, and manage your rendered vertical shorts.
           </p>
         </div>

@@ -61,6 +61,8 @@ def root_health() -> dict:
 app.mount("/media", StaticFiles(directory=str(JOBS_DIR)), name="media")
 if (DIST_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+if (DIST_DIR / "fonts").exists():
+    app.mount("/fonts", StaticFiles(directory=str(DIST_DIR / "fonts")), name="fonts")
 
 POOL = ThreadPoolExecutor(max_workers=int(os.getenv("CLIP_WORKERS", "1")), thread_name_prefix="clip")
 LOCK = threading.Lock()
@@ -314,8 +316,17 @@ def _normalize_clips(job_id: str, clips: list[dict], check_exists: bool = False)
         if "srt_url" not in c_copy:
             srt_path = c.get("srt") or (f"clips/{Path(fname).stem}.srt" if video_path else "")
             c_copy["srt_url"] = f"/media/{job_id}/{srt_path}" if srt_path else ""
-        if "clean_url" not in c_copy and c.get("clean_video"):
-            c_copy["clean_url"] = f"/media/{job_id}/{c.get('clean_video')}"
+        if "clean_url" not in c_copy:
+            clean_path = c.get("clean_video")
+            if not clean_path:
+                candidate = job_dir / "clips" / f"{Path(fname).stem}.clean.mp4"
+                if candidate.exists():
+                    clean_path = f"clips/{candidate.name}"
+                    c_copy["clean_video"] = clean_path
+            if clean_path:
+                c_copy["clean_url"] = f"/media/{job_id}/{clean_path}"
+        if "clean_url" not in c_copy:
+            c_copy["clean_url"] = None
         if "thumb_url" not in c_copy and c.get("thumb"):
             c_copy["thumb_url"] = f"/media/{job_id}/{c.get('thumb')}"
         normalized.append(c_copy)
@@ -805,6 +816,40 @@ def get_clip_words_endpoint(job_id: str, clip_identifier: str):
     try:
         data = pipeline.get_clip_words(path, clip_identifier)
         return data
+    except ToolError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/jobs/{job_id}/clips/{clip_identifier}/clean")
+def ensure_clean_endpoint(job_id: str, clip_identifier: str):
+    """Make sure the clip has a caption-free master the editor can preview."""
+    path = _job_path(job_id)
+    try:
+        updated_clip = pipeline.ensure_clean_master(path, clip_identifier)
+    except ToolError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not build the caption-free preview: {exc}")
+    with LOCK:
+        if job_id in JOB_CACHE:
+            job = JOB_CACHE[job_id]
+            for i, c in enumerate(job.get("clips") or []):
+                if c.get("slug") == updated_clip.get("slug"):
+                    job["clips"][i] = updated_clip
+                    break
+    norm = _normalize_clips(job_id, [updated_clip])
+    return {"ok": True, "clip": norm[0] if norm else updated_clip}
+
+
+@app.post("/api/jobs/{job_id}/clips/{clip_identifier}/caption-plan")
+def caption_plan_endpoint(job_id: str, clip_identifier: str, req: ClipCustomizeRequest):
+    """Caption events for the editor, from the same planner that burns them."""
+    path = _job_path(job_id)
+    opts = {k: v for k, v in req.dict().items() if v is not None}
+    try:
+        return pipeline.clip_caption_plan(path, clip_identifier, opts)
     except ToolError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:

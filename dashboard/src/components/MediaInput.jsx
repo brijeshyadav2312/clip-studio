@@ -288,7 +288,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                 onClick={() => setAspect('9:16')}
                 className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all text-center cursor-pointer ${
                   aspect === '9:16'
-                    ? 'border-[#ba6238] bg-[#ba6238]/10 text-[#ba6238] shadow-[0_0_15px_rgba(186,98,56,0.15)] ring-1 ring-[#ba6238]/50'
+                    ? 'border-[#ba6238] bg-[#a8542c]/10 text-[#ba6238] shadow-[0_0_15px_rgba(186,98,56,0.15)] ring-1 ring-[#ba6238]/50'
                     : 'border-rule bg-[#0e1015] hover:border-rule2 hover:bg-paper2/50 text-ink'
                 }`}
               >
@@ -299,7 +299,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                 >
                   <div
                     className={`w-1 h-1 rounded-full ${
-                      aspect === '9:16' ? 'bg-[#ba6238]' : 'bg-muted'
+                      aspect === '9:16' ? 'bg-[#a8542c]' : 'bg-muted'
                     }`}
                   />
                 </div>
@@ -317,7 +317,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                 onClick={() => setAspect('1:1')}
                 className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all text-center cursor-pointer ${
                   aspect === '1:1'
-                    ? 'border-[#ba6238] bg-[#ba6238]/10 text-[#ba6238] shadow-[0_0_15px_rgba(186,98,56,0.15)] ring-1 ring-[#ba6238]/50'
+                    ? 'border-[#ba6238] bg-[#a8542c]/10 text-[#ba6238] shadow-[0_0_15px_rgba(186,98,56,0.15)] ring-1 ring-[#ba6238]/50'
                     : 'border-rule bg-[#0e1015] hover:border-rule2 hover:bg-paper2/50 text-ink'
                 }`}
               >
@@ -340,7 +340,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                 onClick={() => setAspect('16:9')}
                 className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all text-center cursor-pointer ${
                   aspect === '16:9'
-                    ? 'border-[#ba6238] bg-[#ba6238]/10 text-[#ba6238] shadow-[0_0_15px_rgba(186,98,56,0.15)] ring-1 ring-[#ba6238]/50'
+                    ? 'border-[#ba6238] bg-[#a8542c]/10 text-[#ba6238] shadow-[0_0_15px_rgba(186,98,56,0.15)] ring-1 ring-[#ba6238]/50'
                     : 'border-rule bg-[#0e1015] hover:border-rule2 hover:bg-paper2/50 text-ink'
                 }`}
               >
@@ -581,7 +581,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
               className={`w-full py-3.5 px-6 rounded-2xl font-bold text-sm tracking-wide transition-all flex items-center justify-center gap-2 ${
                 canSubmit && !isProcessing
                   ? 'bg-gradient-to-r from-[#ba6238] via-amber-600 to-[#ba6238] text-white hover:brightness-110 shadow-lg shadow-[#ba6238]/20 cursor-pointer'
-                  : 'bg-paper3 text-muted/60 border border-rule/50 cursor-not-allowed opacity-60'
+                  : 'bg-paper3 text-[#b9bfc7] border border-rule/50 cursor-not-allowed'
               }`}
             >
               <span className="truncate">{getSubmitLabel()}</span>
@@ -603,13 +603,13 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
               </span>
 
               {/* Borderless Aesthetic Pill Toggle */}
-              <div className="flex items-center bg-white/[0.04] p-1 rounded-full gap-1 shadow-inner">
+              <div className="flex items-center bg-[rgba(255,255,255,0.04)] p-1 rounded-full gap-1 shadow-inner">
                 <button
                   type="button"
                   onClick={() => setMode('url')}
                   className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
                     mode === 'url'
-                      ? 'bg-[#ba6238] text-white shadow-sm'
+                      ? 'bg-[#a8542c] text-white shadow-sm'
                       : 'text-muted hover:text-white'
                   }`}
                 >
@@ -622,7 +622,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                   onClick={() => setMode('upload')}
                   className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
                     mode === 'upload'
-                      ? 'bg-[#ba6238] text-white shadow-sm'
+                      ? 'bg-[#a8542c] text-white shadow-sm'
                       : 'text-muted hover:text-white'
                   }`}
                 >
@@ -777,7 +777,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                   onClick={() => fileInputRef.current?.click()}
                   className={`flex-1 min-h-[260px] border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all ${
                     file
-                      ? 'border-[#ba6238] bg-[#ba6238]/10'
+                      ? 'border-[#ba6238] bg-[#a8542c]/10'
                       : 'border-rule hover:border-[#ba6238]/60 bg-[#0e1015] hover:bg-paper2/40 group'
                   }`}
                 >
@@ -795,7 +795,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
 
                   {file ? (
                     <div className="flex flex-col items-center text-center gap-2 max-w-full">
-                      <div className="w-12 h-12 rounded-2xl bg-[#ba6238]/20 border border-[#ba6238]/40 flex items-center justify-center text-[#ba6238]">
+                      <div className="w-12 h-12 rounded-2xl bg-[#a8542c]/20 border border-[#ba6238]/40 flex items-center justify-center text-[#ba6238]">
                         <FileVideo size={24} />
                       </div>
                       <div className="font-semibold text-ink text-sm sm:text-base max-w-md truncate w-full px-2">
@@ -818,7 +818,7 @@ export default function MediaInput({ onProcess, isProcessing, onUploadCookies, c
                   ) : (
                     <div className="flex flex-col items-center text-center gap-2.5 max-w-full px-4">
                       {/* Cloud Upload Icon inside Orange Styled Container */}
-                      <div className="w-14 h-14 rounded-2xl bg-[#ba6238]/15 border border-[#ba6238]/30 flex items-center justify-center text-[#ba6238] group-hover:scale-105 transition-transform">
+                      <div className="w-14 h-14 rounded-2xl bg-[#a8542c]/15 border border-[#ba6238]/30 flex items-center justify-center text-[#ba6238] group-hover:scale-105 transition-transform">
                         <UploadCloud size={28} />
                       </div>
 
