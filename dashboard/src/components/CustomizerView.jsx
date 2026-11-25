@@ -1,9 +1,14 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import {
   Sparkles,
-  MoveVertical,
   Type,
-  Scissors,
   Crop,
   Play,
   Pause,
@@ -11,134 +16,322 @@ import {
   VolumeX,
   RotateCcw,
   Download,
-  FileText,
   Flame,
   Check,
   Palette,
   Film,
   ChevronDown,
-  Layers,
   Zap,
   RefreshCw,
-  Sliders,
-  CheckCircle2,
+  Undo2,
+  Redo2,
+  Eye,
+  EyeOff,
+  Save,
+  Loader2,
+  Captions,
+  Timer,
+  LayoutTemplate,
+  ShieldCheck,
+  Trash2,
+  MousePointer2,
+  AlertTriangle,
+  Gauge,
 } from 'lucide-react';
+import {
+  CAPTION_PRESETS,
+  PRESET_BY_ID,
+  CAPTION_FONTS,
+  COLOR_SWATCHES,
+  POSITIONS,
+  buildCaptionPlan,
+  activeGroupAt,
+  activeWordIndex,
+  exportToCss,
+  hexToRgba,
+  formatTime,
+  presetState,
+  overrideKey,
+} from '../lib/captionLayout';
 
-const PRESETS = [
+const HISTORY_LIMIT = 60;
+const TABS = [
+  { id: 'style', label: 'Style', icon: Sparkles },
+  { id: 'layout', label: 'Layout', icon: LayoutTemplate },
+  { id: 'text', label: 'Text', icon: Captions },
+  { id: 'timeline', label: 'Trim', icon: Timer },
+  { id: 'hook', label: 'Hook', icon: Flame },
+  { id: 'framing', label: 'Framing', icon: Crop },
+];
+
+const FRAMING_OPTIONS = [
   {
-    id: 'hormozi',
-    name: 'Hormozi 3D Pop',
-    desc: '1-2 words, massive 3D scale pop, thick black stroke outline',
-    font: 'Impact',
-    fontSize: 84,
-    primaryColor: '#FFFFFF',
-    activeColor: '#00FF66',
-    uppercase: true,
-    wordsPerGroup: 2,
-    badge: 'Viral',
-    badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    id: 'crop',
+    title: 'Smart Face Crop',
+    desc: 'Tracks the active speaker and centres the 9:16 frame.',
   },
   {
-    id: 'boxed',
-    name: 'Boxed Highlighter',
-    desc: 'Angled yellow marker box on active words, glass pill backdrop',
-    font: 'Arial Black',
-    fontSize: 66,
-    primaryColor: '#FFFFFF',
-    activeColor: '#000000',
-    boxColor: '#FFE600',
-    uppercase: true,
-    wordsPerGroup: 3,
-    badge: 'High Retention',
-    badgeColor: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    id: 'dynamic_landscape',
+    title: 'Hybrid Smart Fit',
+    desc: 'Crops faces when talking, fits the wide shot otherwise.',
   },
   {
-    id: 'neon',
-    name: 'Cyberpunk Neon',
-    desc: 'Futuristic glowing card container with cyan/magenta bloom',
-    font: 'Impact',
-    fontSize: 74,
-    primaryColor: '#00FFFF',
-    activeColor: '#FF00FF',
-    uppercase: true,
-    wordsPerGroup: 3,
-    badge: 'Trending',
-    badgeColor: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    id: 'fit_blur',
+    title: 'Fit + Blur Bars',
+    desc: 'Keeps the full landscape frame over a blurred backdrop.',
   },
   {
-    id: 'karaoke',
-    name: 'Karaoke Glow',
-    desc: 'Words smoothly light up into warm gold in a frosted dark pill',
-    font: 'Montserrat',
-    fontSize: 64,
-    primaryColor: '#FFFFFF',
-    activeColor: '#FFDD00',
-    uppercase: false,
-    wordsPerGroup: 4,
-    badge: 'Lyric Style',
-    badgeColor: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  },
-  {
-    id: 'comic',
-    name: 'Comic Cartoon',
-    desc: 'Cartoon pop styling with 4px ink border and bouncy sticker tilt',
-    font: 'Trebuchet MS',
-    fontSize: 76,
-    primaryColor: '#FFF01F',
-    activeColor: '#FF2A6D',
-    uppercase: true,
-    wordsPerGroup: 3,
-    badge: 'Playful',
-    badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
-  },
-  {
-    id: 'beast',
-    name: 'MrBeast Punch',
-    desc: 'Energetic gold punch zoom snapping on every spoken word',
-    font: 'Impact',
-    fontSize: 88,
-    primaryColor: '#FFFFFF',
-    activeColor: '#FFD700',
-    uppercase: true,
-    wordsPerGroup: 2,
-    badge: 'Punchy',
-    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-  },
-  {
-    id: 'clean',
-    name: 'Cinematic Minimal',
-    desc: 'Understated frosted glass pill with elegant sans typography',
-    font: 'Rubik',
-    fontSize: 54,
-    primaryColor: '#FFFFFF',
-    activeColor: '#F59E0B',
-    uppercase: false,
-    wordsPerGroup: 5,
-    badge: 'Clean',
-    badgeColor: 'bg-white/10 text-white/80 border-white/20',
+    id: 'streamer_split',
+    title: 'Streamer Split',
+    desc: 'Facecam stacked above gameplay.',
   },
 ];
 
-const FONTS = [
-  'Arial Black',
-  'Impact',
-  'Montserrat',
-  'Rubik',
-  'Oswald',
-  'Trebuchet MS',
-  'sans-serif',
-];
+const clamp = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
+const stem = (name) => String(name || 'clip').replace(/\.mp4$/i, '');
+const sameState = (a, b) => {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if (!Object.is(a[key], b[key])) return false;
+  }
+  return true;
+};
 
-const SWATCHES = [
-  '#FFFFFF',
-  '#00FF66',
-  '#FFDD00',
-  '#00E5FF',
-  '#FF2A6D',
-  '#FFAA00',
-  '#A855F7',
-  '#000000',
-];
+function makeDefaultState(clip) {
+  const preset = PRESET_BY_ID[clip?.caption_style] || CAPTION_PRESETS[0];
+  const start = Number(clip?.start ?? 0);
+  const end = Number(clip?.end ?? start + (clip?.duration ?? 30));
+  return {
+    ...presetState(preset),
+    position: 'bottom',
+    marginV: 300,
+    hook: clip?.hook || '',
+    framing: clip?.reframe?.mode || 'crop',
+    trimStart: start,
+    trimEnd: end,
+    overrides: {},
+    censor: false,
+  };
+}
+
+function fromCaptionOptions(options, base) {
+  if (!options || typeof options !== 'object') return base;
+  return hydrateState(
+    {
+      preset: options.caption_style,
+      font: options.font,
+      fontSize: options.font_size,
+      primaryColor: options.primary_color,
+      activeColor: options.active_color,
+      uppercase: options.uppercase,
+      words: options.words,
+      chars: options.chars,
+      outline: options.outline,
+      shadow: options.shadow,
+      pop: options.pop,
+      pill: options.pill,
+      pillColor: options.pill_color,
+      pillAlpha: options.pill_alpha,
+      letterSpacing: options.letter_spacing,
+      lineHeight: options.line_height,
+      position: options.caption_position,
+      marginV: options.margin_v,
+      hook: options.hook,
+      overrides: options.word_overrides,
+    },
+    base
+  );
+}
+
+function hydrateState(saved, base) {
+  if (!saved || typeof saved !== 'object') return base;
+  const next = { ...base };
+  for (const key of Object.keys(base)) {
+    const value = saved[key];
+    if (value !== undefined && value !== null) next[key] = value;
+  }
+  if (saved.overrides && typeof saved.overrides === 'object') {
+    next.overrides = saved.overrides;
+  }
+  return next;
+}
+
+function historyReducer(state, action) {
+  switch (action.type) {
+    case 'set': {
+      const patch =
+        typeof action.patch === 'function' ? action.patch(state.present) : action.patch;
+      const next = { ...state.present, ...patch };
+      if (sameState(next, state.present)) return state;
+      const coalesce =
+        action.key && action.key === state.lastKey && action.at - state.lastAt < 700;
+      return {
+        past: coalesce
+          ? state.past
+          : [...state.past, state.present].slice(-HISTORY_LIMIT),
+        present: next,
+        future: [],
+        lastKey: action.key || null,
+        lastAt: action.at,
+      };
+    }
+    case 'undo': {
+      if (!state.past.length) return state;
+      return {
+        past: state.past.slice(0, -1),
+        present: state.past[state.past.length - 1],
+        future: [state.present, ...state.future].slice(0, HISTORY_LIMIT),
+        lastKey: null,
+        lastAt: 0,
+      };
+    }
+    case 'redo': {
+      if (!state.future.length) return state;
+      const [next, ...rest] = state.future;
+      return {
+        past: [...state.past, state.present].slice(-HISTORY_LIMIT),
+        present: next,
+        future: rest,
+        lastKey: null,
+        lastAt: 0,
+      };
+    }
+    case 'replace':
+      return { past: [], present: action.present, future: [], lastKey: null, lastAt: 0 };
+    default:
+      return state;
+  }
+}
+
+function useEditorHistory(initial) {
+  const [state, dispatch] = useReducer(historyReducer, {
+    past: [],
+    present: initial,
+    future: [],
+    lastKey: null,
+    lastAt: 0,
+  });
+  const update = useCallback(
+    (patch, key) => dispatch({ type: 'set', patch, key, at: Date.now() }),
+    []
+  );
+  const undo = useCallback(() => dispatch({ type: 'undo' }), []);
+  const redo = useCallback(() => dispatch({ type: 'redo' }), []);
+  const replace = useCallback((present) => dispatch({ type: 'replace', present }), []);
+  return {
+    editor: state.present,
+    update,
+    undo,
+    redo,
+    replace,
+    canUndo: state.past.length > 0,
+    canRedo: state.future.length > 0,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Small controls                                                      */
+/* ------------------------------------------------------------------ */
+
+function Slider({ label, value, min, max, step = 1, onChange, suffix = '', format }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+          {label}
+        </span>
+        <span className="font-mono text-[11px] font-bold text-[#e08a5c]">
+          {format ? format(value) : value}
+          {suffix}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-white/15 accent-[#c96a3d]"
+      />
+    </div>
+  );
+}
+
+function Toggle({ label, hint, checked, onChange }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3">
+      <div className="min-w-0">
+        <p className="text-xs font-bold text-white">{label}</p>
+        {hint && <p className="mt-0.5 text-[11px] leading-snug text-white/45">{hint}</p>}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        aria-pressed={checked}
+        className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
+          checked ? 'bg-[#a8542c]' : 'bg-white/20'
+        }`}
+      >
+        <span
+          className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${
+            checked ? 'left-6' : 'left-1'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+function Swatches({ value, onChange, allowNone = false, noneLabel = 'No highlight' }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {allowNone && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          title={noneLabel}
+          className={`flex h-7 items-center gap-1 rounded-lg border px-2 text-[10px] font-semibold transition-all ${
+            !value
+              ? 'border-white bg-white/10 text-white'
+              : 'border-white/15 text-white/50 hover:text-white'
+          }`}
+        >
+          <EyeOff size={11} /> Off
+        </button>
+      )}
+      {COLOR_SWATCHES.map((hex) => (
+        <button
+          key={hex}
+          type="button"
+          onClick={() => onChange(hex)}
+          title={hex}
+          style={{ backgroundColor: hex }}
+          className={`h-7 w-7 cursor-pointer rounded-lg border transition-all ${
+            value && value.toUpperCase() === hex.toUpperCase()
+              ? 'scale-110 border-white ring-2 ring-[#ba6238]'
+              : 'border-white/20 hover:scale-105'
+          }`}
+        />
+      ))}
+      <label className="relative h-7 w-7 cursor-pointer overflow-hidden rounded-lg border border-dashed border-white/30">
+        <input
+          type="color"
+          value={value || '#ffffff'}
+          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          className="absolute -left-2 -top-2 h-12 w-12 cursor-pointer opacity-0"
+        />
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] text-white/60">
+          +
+        </span>
+      </label>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Main editor                                                         */
+/* ------------------------------------------------------------------ */
 
 export default function CustomizerView({
   jobs = [],
@@ -146,38 +339,32 @@ export default function CustomizerView({
   selectedClipInfo = null,
   onNavigateToGenerator,
 }) {
-  // Aggregate all available clips across current job and history
   const allClips = useMemo(() => {
     const list = [];
-    // 1. Current active job clips first
     if (activeJob && Array.isArray(activeJob.clips)) {
-      activeJob.clips.forEach((c) => {
-        list.push({ ...c, jobId: activeJob.id });
-      });
+      activeJob.clips.forEach((c) => list.push({ ...c, jobId: activeJob.id }));
     }
-    // 2. All finished jobs clips
     if (Array.isArray(jobs)) {
       jobs.forEach((j) => {
         if (j.id === activeJob?.id) return;
         if (Array.isArray(j.clips)) {
-          j.clips.forEach((c) => {
-            list.push({ ...c, jobId: j.id });
-          });
+          j.clips.forEach((c) => list.push({ ...c, jobId: j.id }));
         }
       });
     }
     return list;
   }, [jobs, activeJob]);
 
-  // Determine which clip to select by default (latest generated clip)
   const [currentClip, setCurrentClip] = useState(() => {
     if (selectedClipInfo?.clip) {
-      return { ...selectedClipInfo.clip, jobId: selectedClipInfo.jobId || selectedClipInfo.clip.jobId };
+      return {
+        ...selectedClipInfo.clip,
+        jobId: selectedClipInfo.jobId || selectedClipInfo.clip.jobId,
+      };
     }
     return allClips[0] || null;
   });
 
-  // When selectedClipInfo changes from parent (e.g. user clicked Edit on a card)
   useEffect(() => {
     if (selectedClipInfo?.clip) {
       setCurrentClip({
@@ -189,378 +376,483 @@ export default function CustomizerView({
     }
   }, [selectedClipInfo, allClips]);
 
-  // Video element and playback state
   const videoRef = useRef(null);
+  const frameRef = useRef(null);
+  const trimBarRef = useRef(null);
+  const dragRef = useRef(null);
+  const trimDragRef = useRef(null);
+  const saveTimerRef = useRef(null);
+
+  const [frameWidth, setFrameWidth] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  // Cache-buster for the burned export download link.
-  const [burnedAt, setBurnedAt] = useState(0);
-  const [duration, setDuration] = useState(30);
   const [isMuted, setIsMuted] = useState(false);
-
-  // Inspector active tab: 'presets' | 'placement' | 'typography' | 'hook' | 'framing'
-  const [activeTab, setActiveTab] = useState('presets');
-
-  // Caption plan from the server: the same grouping, line breaks and timings
-  // the export burns, so the preview is what you get.
-  const [captionPlan, setCaptionPlan] = useState(null);
-  const [planState, setPlanState] = useState('idle'); // idle | loading | error
-  const [planError, setPlanError] = useState(null);
-  // Caption-free master state: the editor can only overlay text on a clean video.
-  const [cleanState, setCleanState] = useState('idle'); // idle | preparing | ready | unavailable
-  const [cleanError, setCleanError] = useState(null);
-  const [frameWidth, setFrameWidth] = useState(0);
-  const frameRef = useRef(null);
-  const playedOnceRef = useRef(false);
-
-  // Live customization parameters (Changes update INSTANTLY in the video overlay)
-  const [captionStyle, setCaptionStyle] = useState('hormozi');
-  const [captionPosition, setCaptionPosition] = useState('bottom');
-  const [verticalPercent, setVerticalPercent] = useState(18); // % from bottom
-  const [font, setFont] = useState('Impact');
-  const [fontSize, setFontSize] = useState(82);
-  const [primaryColor, setPrimaryColor] = useState('#FFFFFF');
-  const [activeColor, setActiveColor] = useState('#00FF66');
-  const [uppercase, setUppercase] = useState(true);
-  const [hook, setHook] = useState('');
-  const [trimStart, setTrimStart] = useState(0);
-  const [trimEnd, setTrimEnd] = useState(30);
-  const [framing, setFraming] = useState('crop');
-
-  // One source of truth for where captions sit. 1920 is the export height, so
-  // these numbers are read straight off the same grid the burn uses.
-  const marginV = useMemo(() => {
-    if (captionPosition === 'top') return 1500;
-    if (captionPosition === 'divider') return 780;
-    if (captionPosition === 'middle') return 860;
-    if (captionPosition === 'bottom') return 300;
-    return Math.round((verticalPercent / 100) * 1920);
-  }, [captionPosition, verticalPercent]);
-
-  // Sent to the caption planner; identical to what the export sends, which is
-  // what keeps the preview and the burned file in agreement.
-  const styleRequest = useMemo(() => ({
-    caption_style: captionStyle,
-    caption_position: captionPosition,
-    margin_v: marginV,
-    font,
-    font_size: fontSize,
-    primary_color: primaryColor,
-    active_color: activeColor,
-    uppercase,
-    hook,
-  }), [captionStyle, captionPosition, marginV, font, fontSize, primaryColor, activeColor, uppercase, hook]);
-
-
-  // Burn-in export state (optional)
+  const [activeTab, setActiveTab] = useState('style');
+  const [showSafeZones, setShowSafeZones] = useState(false);
+  const [showTranscriptSearch, setShowTranscriptSearch] = useState('');
+  const [burnedAt, setBurnedAt] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState(null);
+  const [saveState, setSaveState] = useState('idle');
+  const [reloadToken, setReloadToken] = useState(0);
 
-  // Synchronize clip metadata into state when currentClip changes
+  const [words, setWords] = useState([]);
+  const [clipMeta, setClipMeta] = useState({ start: 0, end: 30, duration: 30 });
+  const [loadState, setLoadState] = useState('idle');
+  const [loadError, setLoadError] = useState(null);
+  const [loadedKey, setLoadedKey] = useState('');
+
+  const { editor, update, undo, redo, replace, canUndo, canRedo } =
+    useEditorHistory(makeDefaultState(currentClip));
+
+  const jobId = currentClip?.jobId || '';
+  const clipSlug = currentClip?.slug || stem(currentClip?.filename);
+
+  /* ---- load: clean master + transcript + saved state ---- */
   useEffect(() => {
     if (!currentClip) return;
-    setHook(currentClip.hook || '');
-    setTrimStart(currentClip.start || 0);
-    setTrimEnd(currentClip.end || (currentClip.start || 0) + (currentClip.duration || 30));
-    setDuration(currentClip.duration || ((currentClip.end || 0) - (currentClip.start || 0)) || 30);
-    if (currentClip.reframe?.mode) setFraming(currentClip.reframe.mode);
-    if (currentClip.caption_style) {
-      const match = PRESETS.find((p) => p.id === currentClip.caption_style);
-      if (match) applyPreset(match);
-    }
-
-  }, [currentClip]);
-
-  // 1. Make sure this clip has a caption-free master. Older clips were rendered
-  //    with captions burned in; overlaying a new style on them showed both.
-  useEffect(() => {
-    if (!currentClip) return;
-    const jobId = currentClip.jobId;
-    const clipSlug = currentClip.slug || String(currentClip.filename).replace(/\.mp4$/i, '');
-    if (!jobId || !clipSlug) {
-      setCleanState('unavailable');
-      return;
-    }
-    if (currentClip.clean_url) {
-      setCleanState('ready');
-      setCleanError(null);
+    const jid = currentClip.jobId;
+    const slug = currentClip.slug || stem(currentClip.filename);
+    if (!jid || !slug) {
+      setLoadState('error');
+      setLoadError('This clip is missing its job reference.');
       return;
     }
     let cancelled = false;
-    setCleanState('preparing');
-    setCleanError(null);
-    fetch(`/api/jobs/${jobId}/clips/${clipSlug}/clean`, { method: 'POST' })
-      .then(async (res) => {
+    const controller = new AbortController();
+
+    (async () => {
+      setLoadState('loading');
+      setLoadError(null);
+      setWords([]);
+      try {
+        let clip = currentClip;
+        if (!clip.clean_url) {
+          const res = await fetch(`/api/jobs/${jid}/clips/${slug}/clean`, {
+            method: 'POST',
+            signal: controller.signal,
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.detail || 'Could not build the caption-free preview');
+          }
+          if (data.clip) {
+            clip = { ...data.clip, jobId: jid };
+            if (!cancelled) setCurrentClip(clip);
+          }
+        }
+
+        const res = await fetch(`/api/jobs/${jid}/clips/${slug}/words`, {
+          signal: controller.signal,
+        });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.detail || 'Could not prepare the caption-free preview');
+        if (!res.ok) throw new Error(data.detail || 'Could not load the transcript');
         if (cancelled) return;
-        if (data.clip) setCurrentClip({ ...data.clip, jobId });
-        setCleanState('ready');
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setCleanError(err.message);
-        setCleanState('unavailable');
-      });
+
+        const merged = { ...clip, ...(data.clip || {}) };
+        const base = makeDefaultState(merged);
+        const saved = data.editor_state || fromCaptionOptions(data.caption_options, base);
+        const meta = {
+          start: Number(data.start ?? base.trimStart),
+          end: Number(data.end ?? base.trimEnd),
+          duration: Number(data.duration ?? 30),
+        };
+        const hydrated = hydrateState(saved, base);
+        // Keep the saved trim inside the clean master that actually exists.
+        const maxEnd = meta.start + meta.duration;
+        hydrated.trimStart = clamp(hydrated.trimStart, meta.start, maxEnd - 0.5);
+        hydrated.trimEnd = clamp(hydrated.trimEnd, hydrated.trimStart + 0.5, maxEnd);
+
+        setWords(data.words || []);
+        setClipMeta(meta);
+        replace(hydrated);
+        setCurrentTime(0);
+        setLoadedKey(`${jid}/${slug}`);
+        setLoadState('ready');
+      } catch (err) {
+        if (err.name === 'AbortError' || cancelled) return;
+        setLoadError(err.message || 'Could not open this clip');
+        setLoadState('error');
+      }
+    })();
+
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [currentClip?.slug, currentClip?.jobId, currentClip?.clean_url]);
+  }, [currentClip?.jobId, currentClip?.slug, reloadToken]);
 
-  // 2. Keep the video clock frame-accurate. `timeupdate` fires ~4x a second,
-  //    which made word highlights visibly trail the audio.
-  useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      const v = videoRef.current;
-      if (v && !v.paused) setCurrentTime(v.currentTime);
-      raf = requestAnimationFrame(tick);
-    };
-    if (isPlaying) raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [isPlaying]);
+  /* ---- derived trim + caption plan (all local, no round-trips) ---- */
+  const { start: sourceStart, duration } = clipMeta;
+  const localTrimStart = clamp(editor.trimStart - sourceStart, 0, Math.max(0, duration - 0.5));
+  const localTrimEnd = clamp(
+    editor.trimEnd - sourceStart,
+    localTrimStart + 0.5,
+    Math.max(0.5, duration)
+  );
+  const trimmedDuration = Math.max(0.1, localTrimEnd - localTrimStart);
 
-  // 3. Measure the frame so caption type is sized against the 1080px export grid.
+  const plan = useMemo(
+    () =>
+      buildCaptionPlan({
+        words,
+        overrides: editor.overrides,
+        trimStart: localTrimStart,
+        trimEnd: localTrimEnd,
+        style: editor,
+        censor: editor.censor,
+      }),
+    [words, editor, localTrimStart, localTrimEnd]
+  );
+
+  const overlayTime = currentTime - localTrimStart;
+  const activeGroup = useMemo(
+    () => activeGroupAt(plan.groups, overlayTime),
+    [plan.groups, overlayTime]
+  );
+  const activeIdx = activeGroup ? activeWordIndex(activeGroup, overlayTime) : -1;
+
+  const captionSize = frameWidth ? exportToCss(editor.fontSize, frameWidth) : 0;
+  const captionOutline = frameWidth ? exportToCss(editor.outline, frameWidth) : 0;
+  const captionShadow = frameWidth ? exportToCss(editor.shadow, frameWidth) : 0;
+  const pillPad = frameWidth ? exportToCss(Math.max(8, Math.round(editor.fontSize * 0.16)), frameWidth) : 0;
+
+  const overlayTopPct = (editor.marginV / 1920) * 100;
+  const hookTopPct = ((editor.position === 'top' || editor.position === 'divider' ? 180 : 150) / 1920) * 100;
+
+  const showHook = editor.hook.trim() && overlayTime >= 0 && overlayTime < plan.hookEnd;
+
+  /* ---- playback ---- */
   useEffect(() => {
     const el = frameRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect?.width || 0;
-      if (w) setFrameWidth(w);
+      const width = entries[0]?.contentRect?.width || 0;
+      if (width) setFrameWidth(width);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [currentClip]);
+  }, [currentClip?.slug]);
 
-  // 4. Ask the server for caption events whenever the style changes.
   useEffect(() => {
-    if (!currentClip || cleanState !== 'ready') return;
-    const jobId = currentClip.jobId;
-    const clipSlug = currentClip.slug || String(currentClip.filename).replace(/\.mp4$/i, '');
-    if (!jobId || !clipSlug) return;
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      setPlanState('loading');
-      fetch(`/api/jobs/${jobId}/clips/${clipSlug}/caption-plan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(styleRequest),
-        signal: controller.signal,
-      })
-        .then(async (res) => {
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.detail || 'Could not build caption preview');
-          setCaptionPlan(data);
-          setPlanState('idle');
-          setPlanError(null);
-        })
-        .catch((err) => {
-          if (err.name === 'AbortError') return;
-          setPlanError(err.message);
-          setPlanState('error');
-        });
-    }, 180);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
+    if (!isPlaying) return undefined;
+    let raf = 0;
+    const tick = () => {
+      const video = videoRef.current;
+      if (video && !video.paused) {
+        let t = video.currentTime;
+        if (t >= localTrimEnd - 0.02) {
+          video.currentTime = localTrimStart;
+          t = localTrimStart;
+        }
+        setCurrentTime(t);
+      }
+      raf = requestAnimationFrame(tick);
     };
-  }, [currentClip?.slug, currentClip?.jobId, cleanState, styleRequest]);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isPlaying, localTrimStart, localTrimEnd]);
 
-  const rawFilename = currentClip?.filename || `${currentClip?.slug || 'clip'}.mp4`;
-  const filename = rawFilename.endsWith('.mp4') ? rawFilename : `${rawFilename}.mp4`;
-  const srtFilename = filename.replace(/\.mp4$/i, '.srt');
-  const resolvedJobId = currentClip?.jobId || '';
-  // Preview the caption-free master when available; captions come only from the
-  // live overlay, so changing the style never shows an old burn underneath.
-  const rawClean = currentClip?.clean_url || currentClip?.clean_video || '';
-  const previewUrl = rawClean
-    ? (rawClean.startsWith('http') || rawClean.startsWith('/media')
-        ? rawClean
-        : `/media/${resolvedJobId}/${rawClean}`)
-    : '';
-  const rawVideo = currentClip?.url || currentClip?.video || '';
-  const burnedUrl = rawVideo.startsWith('http') || rawVideo.startsWith('/media')
-    ? rawVideo
-    : `/media/${resolvedJobId}/${currentClip?.video || `clips/${filename}`}`;
-  const videoUrl = previewUrl || burnedUrl;
-  const rawSrt = currentClip?.srt_url || currentClip?.srt || '';
-  const srtUrl = rawSrt.startsWith('http') || rawSrt.startsWith('/media')
-    ? rawSrt
-    : `/media/${resolvedJobId}/${currentClip?.srt || `clips/${srtFilename}`}`;
-
-  // Time update listener
-  const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
+  const syncVideoToTrim = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 1) return;
+    if (video.currentTime < localTrimStart || video.currentTime >= localTrimEnd) {
+      video.currentTime = localTrimStart;
+      setCurrentTime(localTrimStart);
     }
-  };
+  }, [localTrimStart, localTrimEnd]);
 
-  const handleLoadedMetadata = () => {
-    if (videoRef.current && videoRef.current.duration) {
-      setDuration(videoRef.current.duration);
-    }
-  };
+  useEffect(() => {
+    syncVideoToTrim();
+  }, [syncVideoToTrim]);
 
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play().catch(() => {});
+  const seekTo = useCallback(
+    (time) => {
+      const video = videoRef.current;
+      const next = clamp(time, 0, Math.max(0.1, duration));
+      if (video) video.currentTime = next;
+      setCurrentTime(next);
+    },
+    [duration]
+  );
+
+  const togglePlay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      if (video.currentTime < localTrimStart || video.currentTime >= localTrimEnd - 0.05) {
+        video.currentTime = localTrimStart;
+        setCurrentTime(localTrimStart);
+      }
+      video.play().catch(() => {});
       setIsPlaying(true);
     } else {
-      videoRef.current.pause();
+      video.pause();
       setIsPlaying(false);
     }
-  };
+  }, [localTrimStart, localTrimEnd]);
 
-  const handleSeek = (e) => {
-    const val = parseFloat(e.target.value);
-    if (videoRef.current) {
-      videoRef.current.currentTime = val;
-      setCurrentTime(val);
+  const setTrimLocal = useCallback(
+    (side, value) => {
+      const abs = sourceStart + clamp(value, 0, duration);
+      if (side === 'start') {
+        update(
+          { trimStart: Math.min(abs, editor.trimEnd - 0.5) },
+          'trim-start'
+        );
+        seekTo(abs);
+      } else {
+        update({ trimEnd: Math.max(abs, editor.trimStart + 0.5) }, 'trim-end');
+        seekTo(abs);
+      }
+    },
+    [sourceStart, duration, editor.trimStart, editor.trimEnd, update, seekTo]
+  );
+
+  /* ---- keyboard shortcuts ---- */
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const target = event.target;
+      const tag = target?.tagName;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      const mod = event.ctrlKey || event.metaKey;
+      if (mod && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (mod && event.key.toLowerCase() === 'y') {
+        event.preventDefault();
+        redo();
+        return;
+      }
+      if (event.code === 'Space') {
+        event.preventDefault();
+        togglePlay();
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        seekTo(currentTime - (event.shiftKey ? 1 : 0.1));
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        seekTo(currentTime + (event.shiftKey ? 1 : 0.1));
+      } else if (event.key === '[') {
+        event.preventDefault();
+        setTrimLocal('start', currentTime);
+      } else if (event.key === ']') {
+        event.preventDefault();
+        setTrimLocal('end', currentTime);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo, redo, togglePlay, seekTo, currentTime, setTrimLocal]);
+
+  /* ---- autosave ---- */
+  useEffect(() => {
+    if (loadState !== 'ready' || !jobId || !clipSlug) return undefined;
+    // Never write the previous clip's style into the clip that just opened.
+    if (loadedKey !== `${jobId}/${clipSlug}`) return undefined;
+    setSaveState('dirty');
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      setSaveState('saving');
+      try {
+        const res = await fetch(
+          `/api/jobs/${jobId}/clips/${clipSlug}/editor-state`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(editor),
+          }
+        );
+        setSaveState(res.ok ? 'saved' : 'error');
+      } catch {
+        setSaveState('error');
+      }
+    }, 900);
+    return () => clearTimeout(saveTimerRef.current);
+  }, [editor, loadState, jobId, clipSlug, loadedKey]);
+
+  /* ---- drag captions vertically ---- */
+  const onCaptionPointerDown = (event) => {
+    if (!frameRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* capture is a nicety; synthetic or already-released pointers can throw */
     }
+    dragRef.current = { startY: event.clientY, startMargin: editor.marginV };
+  };
+  const onCaptionPointerMove = (event) => {
+    if (!dragRef.current || !frameRef.current) return;
+    const dy = event.clientY - dragRef.current.startY;
+    const delta = -(dy / frameRef.current.clientHeight) * 1920;
+    update(
+      {
+        marginV: clamp(Math.round(dragRef.current.startMargin + delta), 80, 1780),
+        position: 'custom',
+      },
+      'caption-drag'
+    );
+  };
+  const onCaptionPointerUp = () => {
+    dragRef.current = null;
   };
 
-  // Preset switch
-  const applyPreset = (preset) => {
-    setCaptionStyle(preset.id);
-    setFont(preset.font);
-    setFontSize(preset.fontSize);
-    setPrimaryColor(preset.primaryColor);
-    setActiveColor(preset.activeColor);
-    setUppercase(preset.uppercase);
+  /* ---- trim bar drag ---- */
+  const trimTimeAt = (clientX) => {
+    const rect = trimBarRef.current?.getBoundingClientRect();
+    if (!rect) return 0;
+    const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
+    return ratio * duration;
+  };
+  const onTrimHandleDown = (side) => (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* see the caption drag handler */
+    }
+    trimDragRef.current = { side };
+  };
+  const onTrimPointerMove = (event) => {
+    if (!trimDragRef.current) return;
+    const time = trimTimeAt(event.clientX);
+    setTrimLocal(trimDragRef.current.side, time);
+  };
+  const onTrimPointerUp = () => {
+    trimDragRef.current = null;
   };
 
-  const handleReset = () => {
-    applyPreset(PRESETS[0]);
-    setCaptionPosition('bottom');
-    setVerticalPercent(18);
-    setHook(currentClip?.hook || '');
-  };
-
-  // Export / Burn-in MP4
-  const handleExportBurnedIn = async () => {
-    if (!currentClip) return;
+  /* ---- export ---- */
+  const handleExport = async () => {
+    if (!currentClip || !jobId) return;
     setIsExporting(true);
     setExportMessage(null);
-    const clipSlug = currentClip.slug || String(currentClip.filename).replace(/\.mp4$/i, '');
-    const jobId = currentClip.jobId;
-
     const payload = {
-      caption_style: captionStyle,
-      caption_position: captionPosition,
-      margin_v: marginV,
-      font: font,
-      font_size: fontSize,
-      primary_color: primaryColor,
-      active_color: activeColor,
-      uppercase: uppercase,
-      hook: hook,
-      start: trimStart,
-      end: trimEnd,
-      framing: framing,
+      caption_style: editor.preset,
+      caption_position: editor.position,
+      margin_v: editor.marginV,
+      font: editor.font,
+      font_size: editor.fontSize,
+      primary_color: editor.primaryColor,
+      active_color: editor.activeColor,
+      uppercase: editor.uppercase,
+      hook: editor.hook,
+      start: editor.trimStart,
+      end: editor.trimEnd,
+      framing: editor.framing,
+      outline: editor.outline,
+      shadow: editor.shadow,
+      pop: editor.pop,
+      pill: editor.pill,
+      pill_color: editor.pillColor,
+      pill_alpha: editor.pillAlpha,
+      words: editor.words,
+      chars: editor.chars,
+      letter_spacing: editor.letterSpacing,
+      line_height: editor.lineHeight,
+      censor: editor.censor,
+      word_overrides: editor.overrides,
     };
-
     try {
+      await fetch(`/api/jobs/${jobId}/clips/${clipSlug}/editor-state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editor),
+      }).catch(() => {});
       const res = await fetch(`/api/jobs/${jobId}/clips/${clipSlug}/customize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'Export failed');
-      // Bump the burned file's URL so the browser drops the cached old render.
       setBurnedAt(Date.now());
-      setCurrentClip(data.clip);
-      setExportMessage('✓ Burned-in MP4 exported successfully!');
-      setTimeout(() => setExportMessage(null), 4000);
+      if (data.clip) setCurrentClip({ ...data.clip, jobId });
+      setReloadToken((token) => token + 1);
+      setExportMessage('Burned-in MP4 exported. Download link is up to date.');
+      setTimeout(() => setExportMessage(null), 5000);
     } catch (err) {
-      setExportMessage(`⚠️ ${err.message || 'Error exporting'}`);
+      setExportMessage(`Export failed: ${err.message || 'unknown error'}`);
     } finally {
       setIsExporting(false);
     }
   };
 
-  // Active caption event + active word, straight from the server plan.
-  const activeGroup = useMemo(() => {
-    if (!captionPlan?.groups?.length) return null;
-    return (
-      captionPlan.groups.find(
-        (grp) => currentTime >= grp.start - 0.03 && currentTime < grp.end + 0.06
-      ) || null
-    );
-  }, [captionPlan, currentTime]);
+  const applyPreset = (preset) => update(presetState(preset), `preset-${preset.id}`);
+  const resetAll = () => replace(makeDefaultState(currentClip));
 
-  const activeWords = useMemo(() => {
-    if (!activeGroup) return null;
-    const flat = activeGroup.lines.flat();
-    let activeIdx = flat.findIndex((w) => currentTime >= w.start - 0.02 && currentTime < w.end);
-    if (activeIdx < 0) activeIdx = 0;
-    return { flat, activeIdx };
-  }, [activeGroup, currentTime]);
+  /* ---- media urls ---- */
+  const filename = currentClip?.filename?.endsWith('.mp4')
+    ? currentClip.filename
+    : `${stem(currentClip?.filename || clipSlug)}.mp4`;
+  const srtFilename = filename.replace(/\.mp4$/i, '.srt');
+  const rawClean = currentClip?.clean_url || '';
+  const cache = burnedAt || currentClip?.rendered_at || '';
+  const cleanUrl = rawClean
+    ? `${rawClean}${rawClean.includes('?') ? '&' : '?'}v=${cache || 0}`
+    : '';
+  const burnedUrl = currentClip?.url
+    ? `${currentClip.url}${currentClip.url.includes('?') ? '&' : '?'}v=${cache || 0}`
+    : `/media/${jobId}/clips/${filename}?v=${cache || 0}`;
+  const srtUrl = currentClip?.srt_url || `/media/${jobId}/clips/${srtFilename}`;
+  const videoUrl = cleanUrl || burnedUrl;
 
-  // Export sizes are authored on a 1080px-wide frame; scale them to the preview.
-  const captionSize = captionPlan && frameWidth
-    ? Math.max(7, (captionPlan.size * frameWidth) / 1080)
-    : 0;
-  const captionOutline = captionPlan && frameWidth
-    ? Math.max(0.8, (captionPlan.outline * frameWidth) / 1080)
-    : 0;
-
-  // Fall back to shrinking a line that would overflow the frame (missing font
-  // or an unusually long word), instead of letting it spill over the edges.
-  const captionTextRef = useRef(null);
-  const [fitScale, setFitScale] = useState(1);
-  useEffect(() => {
-    setFitScale(1);
-  }, [activeGroup?.start, captionSize, captionPlan?.font]);
-  useEffect(() => {
-    const node = captionTextRef.current;
-    const frame = frameRef.current;
-    if (!node || !frame || !captionSize) return;
-    const available = frame.clientWidth * 0.94;
-    const used = node.scrollWidth;
-    if (used > available && used > 0) {
-      const next = Math.max(0.55, (available / used) * fitScale);
-      if (next < fitScale - 0.01) setFitScale(next);
-    }
-  }, [activeGroup, captionSize, captionPlan?.font, fitScale]);
-
-  // If no clips exist anywhere in the app
   if (!currentClip) {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8 text-center max-w-md mx-auto space-y-4">
-        <div className="w-16 h-16 rounded-2xl bg-paper2 border border-rule flex items-center justify-center text-muted">
+      <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center space-y-4 p-8 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-rule bg-paper2 text-muted">
           <Film size={28} />
         </div>
         <div className="space-y-1.5">
-          <h3 className="text-lg font-bold text-ink">No Generated Clips Available</h3>
-          <p className="text-xs text-muted leading-relaxed">
-            Generate your first vertical short clip to start customizing styles, placement, and subtitles in real time.
+          <h3 className="text-lg font-bold text-ink">No clips yet</h3>
+          <p className="text-xs leading-relaxed text-muted">
+            Generate a vertical short first, then come back to style captions live.
           </p>
         </div>
         {onNavigateToGenerator && (
           <button
             type="button"
             onClick={onNavigateToGenerator}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#ba6238] via-amber-600 to-[#8d421e] text-white text-xs font-bold shadow-lg transition-all hover:brightness-110 cursor-pointer"
+            className="cursor-pointer rounded-xl bg-gradient-to-r from-[#ba6238] via-amber-600 to-[#8d421e] px-5 py-2.5 text-xs font-bold text-white shadow-lg transition-all hover:brightness-110"
           >
-            Create New Short
+            Create a short
           </button>
         )}
       </div>
     );
   }
 
-  return (
-    <div className="h-full flex flex-col overflow-hidden select-none">
-      {/* Top Studio Control Bar */}
-      <div className="h-14 px-4 sm:px-6 border-b border-rule bg-[#0d0f14] flex items-center justify-between shrink-0 gap-3">
-        {/* Left: Active Short Selector Dropdown */}
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="text-xs font-bold text-white/50 uppercase tracking-wider hidden sm:inline">
-            Active Short:
-          </span>
+  const editedCount = Object.keys(editor.overrides || {}).length;
+  const searchQuery = showTranscriptSearch.trim().toLowerCase();
+  const transcriptGroups = searchQuery
+    ? plan.groups.filter((group) =>
+        group.lines
+          .flat()
+          .some((word) => word.text.toLowerCase().includes(searchQuery))
+      )
+    : plan.groups;
 
+  return (
+    <div className="flex h-full select-none flex-col overflow-hidden bg-[#07090d]">
+      {/* ---------------- top bar ---------------- */}
+      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-rule bg-[#0d0f14] px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="hidden text-xs font-bold uppercase tracking-wider text-white/45 sm:inline">
+            Clip
+          </span>
           <div className="relative">
             <select
               value={currentClip.filename || currentClip.slug}
@@ -570,180 +862,252 @@ export default function CustomizerView({
                 );
                 if (found) setCurrentClip(found);
               }}
-              className="appearance-none bg-paper2 hover:bg-paper3 border border-rule focus:border-[#ba6238] rounded-xl py-1.5 pl-3 pr-8 text-xs font-semibold text-white focus:outline-none transition-colors cursor-pointer max-w-[220px] sm:max-w-xs truncate"
+              className="max-w-[240px] cursor-pointer appearance-none truncate rounded-xl border border-rule bg-paper2 py-1.5 pl-3 pr-8 text-xs font-semibold text-white transition-colors hover:bg-paper3 focus:border-[#ba6238] focus:outline-none"
             >
               {allClips.map((c, i) => (
                 <option key={i} value={c.filename || c.slug} className="bg-[#141822]">
-                  {c.title || c.hook || c.filename || `Clip #${i + 1}`} ({Math.round(c.duration || 30)}s)
+                  {c.title || c.hook || c.filename || `Clip ${i + 1}`} (
+                  {Math.round(c.duration || 30)}s)
                 </option>
               ))}
             </select>
-            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+            <ChevronDown
+              size={14}
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted"
+            />
           </div>
-
-          <span className="pill pill-ok text-[11px] font-mono font-semibold hidden md:inline-flex items-center gap-1">
-            <Zap size={11} /> 100% Live Mode (Instant)
+          <span className="hidden items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 md:inline-flex">
+            <Zap size={11} /> Live preview
           </span>
         </div>
 
-        {/* Right: Quick Reset & Download Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="mr-1 hidden items-center gap-1 text-[10px] font-mono text-white/40 sm:flex">
+            {saveState === 'saving' && (
+              <>
+                <Loader2 size={11} className="animate-spin" /> Saving
+              </>
+            )}
+            {saveState === 'saved' && (
+              <>
+                <Save size={11} className="text-emerald-400" /> Saved
+              </>
+            )}
+            {saveState === 'dirty' && <>Unsaved</>}
+            {saveState === 'error' && (
+              <span className="text-amber-400">Autosave failed</span>
+            )}
+          </div>
+
           <button
             type="button"
-            onClick={handleReset}
-            className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-paper2 hover:bg-paper3 border border-rule text-white/70 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Reset to default settings"
+            onClick={undo}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            className="cursor-pointer rounded-lg border border-rule bg-paper2 p-2 text-white/70 transition-colors hover:bg-paper3 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Undo2 size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Shift+Z)"
+            className="cursor-pointer rounded-lg border border-rule bg-paper2 p-2 text-white/70 transition-colors hover:bg-paper3 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Redo2 size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={resetAll}
+            title="Reset every edit on this clip"
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-rule bg-paper2 px-2.5 py-1.5 text-xs font-semibold text-white/70 transition-colors hover:bg-paper3 hover:text-white"
           >
             <RotateCcw size={13} />
             <span className="hidden sm:inline">Reset</span>
           </button>
-
           <a
-            href={`${burnedUrl}${burnedUrl.includes('?') ? '&' : '?'}v=${burnedAt}`}
+            href={burnedUrl}
             download={filename}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#ba6238] to-[#d47345] hover:from-[#c96a3d] hover:to-[#df7d4f] text-white text-xs font-bold shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
-            title="Download this MP4 short"
+            className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#ba6238] to-[#d47345] px-3.5 py-1.5 text-xs font-bold text-white shadow-md transition-all hover:from-[#c96a3d] hover:to-[#df7d4f]"
           >
             <Download size={13} />
-            <span>Download</span>
+            <span className="hidden sm:inline">MP4</span>
           </a>
         </div>
       </div>
 
-      {/* Main Studio Split Workbench */}
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
-        {/* Left / Center: Interactive 9:16 Video Player with Live Caption Overlay */}
-        <div className="w-full lg:w-[48%] xl:w-[45%] p-4 sm:p-6 bg-[#07090d] flex flex-col items-center justify-center border-b lg:border-b-0 lg:border-r border-rule relative overflow-hidden">
-          {/* 9:16 Portrait Canvas Frame */}
+      {/* ---------------- workbench ---------------- */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+        {/* preview column */}
+        <div className="relative flex w-full flex-col items-center justify-center overflow-hidden border-b border-rule bg-[#05070b] p-4 sm:p-6 lg:w-[46%] lg:border-b-0 lg:border-r xl:w-[44%]">
           <div
             ref={frameRef}
-            className="relative aspect-[9/16] w-full max-w-[300px] h-auto sm:max-w-none sm:h-[420px] md:h-[480px] lg:h-[520px] max-h-full rounded-2xl overflow-hidden bg-black border border-white/15 shadow-2xl flex items-center justify-center group"
+            className="group relative flex aspect-[9/16] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-black shadow-2xl"
+            style={{ height: 'min(62vh, 600px)', maxWidth: '100%' }}
           >
-            <video
-              ref={videoRef}
-              src={videoUrl}
-              preload="auto"
-              loop
-              muted={isMuted}
-              playsInline
-              onTimeUpdate={handleTimeUpdate}
-              onLoadedMetadata={handleLoadedMetadata}
-              onClick={togglePlay}
-              className="w-full h-full object-cover cursor-pointer"
-            />
+            {/* video / framing preview */}
+            {editor.framing === 'fit_blur' ? (
+              <div className="absolute inset-0 overflow-hidden">
+                <video
+                  src={videoUrl}
+                  muted
+                  playsInline
+                  preload="auto"
+                  className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl brightness-50"
+                />
+                <video
+                  ref={videoRef}
+                  src={videoUrl}
+                  preload="auto"
+                  muted={isMuted}
+                  playsInline
+                  onLoadedMetadata={syncVideoToTrim}
+                  onClick={togglePlay}
+                  className="relative z-[1] h-full w-full cursor-pointer object-contain"
+                />
+              </div>
+            ) : (
+              <video
+                ref={videoRef}
+                src={videoUrl}
+                preload="auto"
+                muted={isMuted}
+                playsInline
+                onLoadedMetadata={syncVideoToTrim}
+                onClick={togglePlay}
+                className="h-full w-full cursor-pointer object-cover"
+              />
+            )}
 
-            {/* Hook headline: same box, size and offset as the burn */}
-            {cleanState === 'ready' && captionPlan?.hook && currentTime < captionPlan.hook_end && (
+            {editor.framing === 'streamer_split' && (
+              <div className="pointer-events-none absolute inset-0 z-[2]">
+                <div className="absolute inset-x-0 top-[42%] h-px bg-cyan-300/60 shadow-[0_0_12px_2px_rgba(34,211,238,0.5)]" />
+                <span className="absolute right-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[9px] font-mono text-cyan-200">
+                  SPLIT
+                </span>
+              </div>
+            )}
+
+            {/* safe zones */}
+            {showSafeZones && (
+              <div className="pointer-events-none absolute inset-0 z-[3]">
+                <div className="absolute inset-x-0 top-0 h-[9%] border-b border-dashed border-cyan-300/50 bg-cyan-400/10">
+                  <span className="absolute left-1.5 top-1 text-[8px] font-mono uppercase tracking-wider text-cyan-200/80">
+                    top UI
+                  </span>
+                </div>
+                <div className="absolute inset-x-0 bottom-0 h-[15%] border-t border-dashed border-cyan-300/50 bg-cyan-400/10">
+                  <span className="absolute bottom-1 left-1.5 text-[8px] font-mono uppercase tracking-wider text-cyan-200/80">
+                    caption / UI
+                  </span>
+                </div>
+                <div className="absolute inset-y-0 left-0 w-[6%] border-r border-dashed border-cyan-300/30 bg-cyan-400/5" />
+                <div className="absolute inset-y-0 right-0 w-[6%] border-l border-dashed border-cyan-300/30 bg-cyan-400/5" />
+              </div>
+            )}
+
+            {/* hook */}
+            {showHook && (
               <div
-                className="absolute inset-x-0 z-30 pointer-events-none flex justify-center px-2"
-                style={{ top: `${(captionPlan.margin_hook / 1920) * 100}%` }}
+                className="pointer-events-none absolute inset-x-0 z-30 flex justify-center px-2"
+                style={{ top: `${hookTopPct}%` }}
               >
                 <p
-                  className="text-center text-white"
+                  className="max-w-[92%] text-center text-white"
                   style={{
-                    background: 'rgba(0,0,0,0.6)',
-                    fontFamily: `"${captionPlan.font}", Impact, "Arial Black", sans-serif`,
+                    background: 'rgba(0,0,0,0.62)',
+                    fontFamily: `"${editor.font}", Impact, "Arial Black", sans-serif`,
                     fontWeight: 900,
-                    fontSize: `${Math.max(8, (72 * frameWidth) / 1080)}px`,
+                    fontSize: `${Math.max(8, exportToCss(72, frameWidth))}px`,
                     lineHeight: 1.12,
                     padding: `${Math.max(2, frameWidth * 0.012)}px ${Math.max(4, frameWidth * 0.02)}px`,
-                    maxWidth: '92%',
                   }}
                 >
-                  {captionPlan.hook.split('\\N').map((part, i) => (
+                  {plan.hook.map((line, i) => (
                     <span key={i} className="block">
-                      {part}
+                      {line}
                     </span>
                   ))}
                 </p>
               </div>
             )}
 
-            {/* Preparing / unavailable notice */}
-            {cleanState === 'preparing' && (
-              <div className="absolute inset-x-0 bottom-4 z-30 flex justify-center px-3">
-                <div className="flex items-center gap-2 rounded-lg bg-black/85 px-3 py-2 text-[11px] text-amber-200 border border-amber-400/30">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                  Building a caption-free preview…
-                </div>
-              </div>
-            )}
-            {cleanState === 'unavailable' && (
-              <div className="absolute inset-x-0 bottom-3 z-30 px-3">
-                <div className="rounded-lg bg-black/90 px-3 py-2 text-[11px] leading-snug text-amber-200 border border-amber-400/30">
-                  {cleanError || 'No caption-free preview for this clip.'} Re-run the job to edit its captions.
-                </div>
-              </div>
-            )}
-            {planState === 'loading' && cleanState === 'ready' && (
-              <div className="absolute top-0 inset-x-0 z-30 p-3 flex justify-center pointer-events-none">
-                <span className="rounded-md bg-black/80 px-2.5 py-1 text-[10px] text-white/80 whitespace-nowrap">
-                  Updating captions…
-                </span>
-              </div>
-            )}
-            {planState === 'error' && (
-              <div className="absolute inset-x-0 bottom-3 z-30 px-3">
-                <div className="rounded-lg bg-red-950/90 px-3 py-2 text-[11px] text-red-200 border border-red-500/40">
-                  {planError}
-                </div>
-              </div>
-            )}
-
-            {/* LIVE CAPTION OVERLAY - rendered from the same plan the export burns */}
-            {cleanState === 'ready' && captionPlan && activeGroup && captionSize > 0 && (
+            {/* caption overlay */}
+            {activeGroup && captionSize > 0 && (
               <div
-                className="absolute inset-x-0 z-20 pointer-events-none flex justify-center"
-                style={{ bottom: `${(captionPlan.margin_v / 1920) * 100}%` }}
+                className="absolute inset-x-0 z-20 flex justify-center px-1"
+                style={{ bottom: `${overlayTopPct}%` }}
+                onPointerDown={onCaptionPointerDown}
+                onPointerMove={onCaptionPointerMove}
+                onPointerUp={onCaptionPointerUp}
+                onPointerCancel={onCaptionPointerUp}
               >
                 <div
                   key={activeGroup.start}
-                  ref={captionTextRef}
-                  className="caption-pop"
+                  className={`relative cursor-grab touch-none text-center active:cursor-grabbing ${
+                    editor.pop ? 'caption-pop' : ''
+                  }`}
                   style={{
                     maxWidth: '94%',
-                    textAlign: 'center',
-                    fontFamily: `"${captionPlan.font}", Impact, "Arial Black", sans-serif`,
-                    fontWeight: 900,
-                    fontSize: `${captionSize * fitScale}px`,
-                    lineHeight: 1.04,
-                    letterSpacing: '0.01em',
-                    color: captionPlan.primary_hex,
+                    padding: editor.pill ? `${pillPad}px ${pillPad * 1.35}px` : 0,
+                    borderRadius: editor.pill ? `${Math.max(6, pillPad * 0.9)}px` : 0,
+                    background: editor.pill
+                      ? hexToRgba(editor.pillColor, editor.pillAlpha)
+                      : 'transparent',
+                    backdropFilter: editor.pill ? 'blur(2px)' : undefined,
+                    fontFamily: `"${editor.font}", Impact, "Arial Black", sans-serif`,
+                    fontWeight: 800,
+                    fontSize: `${captionSize}px`,
+                    lineHeight: editor.lineHeight,
+                    letterSpacing: `${exportToCss(editor.letterSpacing, frameWidth)}px`,
+                    color: editor.primaryColor,
                     WebkitTextStroke: `${captionOutline}px #000000`,
                     paintOrder: 'stroke fill',
-                    textShadow: `0 ${captionOutline * 0.7}px 0 #000000`,
+                    textShadow: captionShadow
+                      ? `${captionShadow * 0.7}px ${captionShadow * 0.7}px 0 rgba(0,0,0,0.75)`
+                      : 'none',
                   }}
                 >
                   {activeGroup.lines.map((line, li) => {
                     const offset = activeGroup.lines
                       .slice(0, li)
-                      .reduce((n, l) => n + l.length, 0);
+                      .reduce((sum, item) => sum + item.length, 0);
                     return (
                       <div
                         key={li}
                         className="flex items-center justify-center"
-                        style={{ gap: `${captionSize * fitScale * 0.26}px` }}
+                        style={{ gap: `${captionSize * 0.24}px` }}
                       >
                         {line.map((word, wi) => {
-                          const isActive = activeWords && offset + wi === activeWords.activeIdx;
+                          const isActive = offset + wi === activeIdx;
+                          const highlight = Boolean(editor.activeColor);
+                          const boxed = editor.preset === 'boxed' && highlight;
+                          const fill = isActive && highlight
+                            ? boxed
+                              ? '#000000'
+                              : editor.activeColor
+                            : editor.primaryColor;
+                          const strokeColor =
+                            isActive && highlight && boxed
+                              ? editor.activeColor
+                              : '#000000';
+                          const strokeWidth = isActive && highlight
+                            ? boxed
+                              ? Math.max(captionOutline + exportToCss(8, frameWidth), exportToCss(16, frameWidth))
+                              : captionOutline
+                            : captionOutline;
                           return (
                             <span
-                              key={`${word.start}-${wi}`}
+                              key={`${word.absStart}-${wi}`}
                               style={{
-                                color: isActive
-                                  ? captionPlan.active_fill_hex
-                                  : captionPlan.primary_hex,
-                                WebkitTextStroke: `${Math.max(
-                                  0.8,
-                                  ((isActive
-                                    ? captionPlan.active_stroke
-                                    : captionPlan.outline) * frameWidth) / 1080
-                                )}px ${isActive ? captionPlan.active_stroke_hex : '#000000'}`,
+                                color: fill,
+                                WebkitTextStroke: `${strokeWidth}px ${strokeColor}`,
                                 whiteSpace: 'nowrap',
-                                transition: 'color 90ms linear',
+                                transition: 'color 80ms linear',
                               }}
                             >
-                              {word.text}
+                              {editor.uppercase ? word.text.toUpperCase() : word.text}
                             </span>
                           );
                         })}
@@ -754,63 +1118,107 @@ export default function CustomizerView({
               </div>
             )}
 
-            {/* Center Play Overlay Icon */}
-            {!isPlaying && (
-              <div
-                onClick={togglePlay}
-                className="absolute inset-0 flex items-center justify-center bg-black/35 group-hover:bg-black/50 transition-colors cursor-pointer z-10"
-              >
-                <div className="w-14 h-14 rounded-full bg-black/70 backdrop-blur-md border border-white/25 flex items-center justify-center text-white shadow-2xl group-hover:scale-110 transition-transform">
-                  <Play size={24} className="fill-white ml-0.5" />
+            {/* drag affordance */}
+            {activeGroup && (
+              <div className="pointer-events-none absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-full bg-black/45 p-1.5 text-white/50 opacity-0 transition-opacity group-hover:opacity-100">
+                <MousePointer2 size={12} />
+              </div>
+            )}
+
+            {/* states */}
+            {loadState === 'loading' && (
+              <div className="absolute inset-x-0 bottom-3 z-40 flex justify-center px-3">
+                <div className="flex items-center gap-2 rounded-lg border border-amber-400/30 bg-black/85 px-3 py-2 text-[11px] text-amber-200">
+                  <Loader2 size={12} className="animate-spin" />
+                  Preparing caption-free preview…
+                </div>
+              </div>
+            )}
+            {loadState === 'error' && (
+              <div className="absolute inset-x-0 bottom-3 z-40 px-3">
+                <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-black/90 px-3 py-2 text-[11px] leading-snug text-amber-200">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  <span>{loadError}</span>
                 </div>
               </div>
             )}
 
-            {/* Corner Audio Toggle */}
+            {/* play overlay */}
+            {!isPlaying && loadState === 'ready' && (
+              <div
+                onClick={togglePlay}
+                className="absolute inset-0 z-10 flex cursor-pointer items-center justify-center bg-black/30 transition-colors group-hover:bg-black/45"
+              >
+                <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/25 bg-black/70 text-white shadow-2xl backdrop-blur-md transition-transform group-hover:scale-110">
+                  <Play size={24} className="ml-0.5 fill-white" />
+                </div>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setIsMuted(!isMuted);
+                setIsMuted((m) => !m);
               }}
-              className="absolute bottom-3 right-3 p-2 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white/80 hover:text-white transition-all z-30 cursor-pointer"
+              className="absolute bottom-3 right-3 z-30 cursor-pointer rounded-full border border-white/20 bg-black/60 p-2 text-white/80 backdrop-blur-md transition-all hover:text-white"
             >
               {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
             </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSafeZones((v) => !v);
+              }}
+              title="Toggle social safe zones"
+              className={`absolute bottom-3 left-3 z-30 cursor-pointer rounded-full border p-2 backdrop-blur-md transition-all ${
+                showSafeZones
+                  ? 'border-cyan-300/50 bg-cyan-400/20 text-cyan-100'
+                  : 'border-white/20 bg-black/60 text-white/70 hover:text-white'
+              }`}
+            >
+              {showSafeZones ? <Eye size={14} /> : <EyeOff size={14} />}
+            </button>
           </div>
 
-          {/* Video Scrub Timeline */}
-          <div className="w-full max-w-[320px] mt-3.5 space-y-1.5">
+          {/* transport */}
+          <div className="mt-4 w-full max-w-[360px] space-y-2">
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={togglePlay}
+                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-white text-black transition-transform hover:scale-105"
+              >
+                {isPlaying ? <Pause size={16} className="fill-black" /> : <Play size={16} className="ml-0.5 fill-black" />}
+              </button>
+              <div className="font-mono text-[11px] text-white/60">
+                <span className="text-white">{formatTime(overlayTime)}</span>
+                <span className="mx-1 text-white/30">/</span>
+                {formatTime(trimmedDuration)}
+              </div>
+              <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-[10px] text-white/50">
+                {Math.round(trimmedDuration * 10) / 10}s clip
+              </span>
+            </div>
+
             <input
               type="range"
-              min="0"
-              max={duration || 30}
-              step="0.05"
+              min={0}
+              max={Math.max(0.1, duration)}
+              step={0.01}
               value={currentTime}
-              onChange={handleSeek}
-              className="w-full h-1.5 bg-white/15 rounded-lg appearance-none cursor-pointer accent-[#ba6238]"
+              onChange={(e) => seekTo(Number(e.target.value))}
+              className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-white/15 accent-[#c96a3d]"
             />
-            <div className="flex items-center justify-between text-[11px] font-mono text-white/60">
-              <span className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                {currentTime.toFixed(1)}s
-              </span>
-              <span>{duration.toFixed(1)}s</span>
-            </div>
           </div>
         </div>
 
-        {/* Right Column: Studio Inspector Panel with Live Tabs */}
-        <div className="w-full lg:w-[52%] xl:w-[55%] flex flex-col bg-[#0f1218] overflow-hidden">
-          {/* Sub-Tabs Nav */}
-          <div className="flex items-center gap-1 p-2 sm:p-3 border-b border-rule bg-[#131720] overflow-x-auto no-scrollbar shrink-0">
-            {[
-              { id: 'presets', label: 'Caption Styles', icon: Sparkles },
-              { id: 'placement', label: 'Placement', icon: MoveVertical },
-              { id: 'typography', label: 'Style & Color', icon: Type },
-              { id: 'hook', label: 'Hook & Headline', icon: Flame },
-              { id: 'framing', label: 'Framing', icon: Crop },
-            ].map((tab) => {
+        {/* inspector */}
+        <div className="flex min-h-0 w-full flex-col overflow-hidden bg-[#0f1218] lg:w-[54%] xl:w-[56%]">
+          <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-b border-rule bg-[#131720] p-2 sm:p-3">
+            {TABS.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
               return (
@@ -818,423 +1226,738 @@ export default function CustomizerView({
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                  className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
                     active
                       ? 'bg-[#a8542c] text-white shadow-md'
-                      : 'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white'
+                      : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                   }`}
                 >
                   <Icon size={13} />
                   <span>{tab.label}</span>
+                  {tab.id === 'text' && editedCount > 0 && (
+                    <span className="rounded-full bg-black/30 px-1.5 text-[9px]">{editedCount}</span>
+                  )}
                 </button>
               );
             })}
           </div>
 
-          {/* Active Tab Inspector Content */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-            {/* TAB 1: PRESETS (Truly Distinct Visual Styles) */}
-            {activeTab === 'presets' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <Sparkles size={14} className="text-[#ba6238]" />
-                    <span>Choose Caption Visual Preset</span>
-                  </h3>
-                  <span className="text-[11px] text-white/50">Changes apply live</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {PRESETS.map((p) => {
-                    const isSelected = captionStyle === p.id;
-                    return (
-                      <div
-                        key={p.id}
-                        onClick={() => applyPreset(p)}
-                        className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 ${
-                          isSelected
-                            ? 'bg-[#a8542c]/15 border-[#ba6238] ring-1 ring-[#ba6238]'
-                            : 'bg-[rgba(255,255,255,0.03)] hover:bg-white/[0.07] border-white/10'
-                        }`}
-                      >
-                        <div className="min-w-0">
+          <div className="flex-1 space-y-6 overflow-y-auto p-4 sm:p-6">
+            {/* ---------------- STYLE ---------------- */}
+            {activeTab === 'style' && (
+              <>
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-white">
+                      <Sparkles size={14} className="text-[#e08a5c]" /> Presets
+                    </h3>
+                    <span className="text-[11px] text-white/40">Tap to load a full look</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    {CAPTION_PRESETS.map((preset) => {
+                      const selected = editor.preset === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => applyPreset(preset)}
+                          className={`cursor-pointer rounded-xl border p-3 text-left transition-all ${
+                            selected
+                              ? 'border-[#ba6238] bg-[#a8542c]/15 ring-1 ring-[#ba6238]'
+                              : 'border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]'
+                          }`}
+                        >
                           <div className="flex items-start justify-between gap-2">
-                            <h4 className="text-sm font-bold text-white flex items-center gap-2 min-w-0">
-                              <span className="truncate">{p.name}</span>
-                              {isSelected && <Check size={14} className="text-[#ba6238] stroke-[3] shrink-0" />}
+                            <h4 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-white">
+                              <span className="truncate">{preset.name}</span>
+                              {selected && <Check size={13} className="shrink-0 stroke-[3] text-[#e08a5c]" />}
                             </h4>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${p.badgeColor}`}>
-                              {p.badge}
+                            <span
+                              className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${preset.badgeColor}`}
+                            >
+                              {preset.badge}
                             </span>
                           </div>
-                          <p className="text-[11px] text-white/60 mt-1 leading-snug">{p.desc}</p>
-                        </div>
+                          <p className="mt-1 text-[11px] leading-snug text-white/45">{preset.desc}</p>
+                          <div className="mt-2.5 flex h-9 items-center justify-center overflow-hidden rounded-lg border border-white/5 bg-black/50">
+                            <span
+                              style={{
+                                fontFamily: `"${preset.font}", sans-serif`,
+                                fontWeight: 800,
+                                fontSize: 15,
+                                letterSpacing: `${preset.letterSpacing * 0.3}px`,
+                                color: preset.primaryColor,
+                                WebkitTextStroke: '0.8px #000',
+                                paintOrder: 'stroke fill',
+                                background: preset.pill
+                                  ? hexToRgba(preset.pillColor, preset.pillAlpha)
+                                  : 'transparent',
+                                padding: preset.pill ? '2px 8px' : 0,
+                                borderRadius: preset.pill ? 6 : 0,
+                              }}
+                            >
+                              {preset.uppercase ? 'THIS HITS' : 'this hits'}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
 
-                        {/* Distinct Visual Preview Snippet */}
-                        <div className="p-2 rounded-lg bg-black/40 border border-white/5 flex flex-wrap items-center justify-center gap-2 text-xs font-black overflow-hidden">
-                          {p.id === 'hormozi' && (
-                            <>
-                              <span className="text-white" style={{ WebkitTextStroke: '1px black' }}>YOU</span>
-                              <span className="text-[#00FF66] scale-110 -rotate-2" style={{ WebkitTextStroke: '1px black' }}>CANNOT</span>
-                              <span className="text-white" style={{ WebkitTextStroke: '1px black' }}>LOSE</span>
-                            </>
-                          )}
-                          {p.id === 'boxed' && (
-                            <>
-                              <span className="px-1.5 py-0.5 rounded bg-black/60 text-white">THE</span>
-                              <span className="px-2 py-0.5 rounded bg-[#FFE600] text-black font-black -rotate-2">SECRET</span>
-                              <span className="px-1.5 py-0.5 rounded bg-black/60 text-white">IS</span>
-                            </>
-                          )}
-                          {p.id === 'neon' && (
-                            <span className="text-cyan-300 font-extrabold text-shadow-[0_0_8px_#00ffff]">
-                              CYBER <span className="text-fuchsia-400 text-shadow-[0_0_12px_#ff00ff]">FUTURE</span>
-                            </span>
-                          )}
-                          {p.id === 'karaoke' && (
-                            <>
-                              <span className="text-white/40">Watch</span>
-                              <span className="text-yellow-400 font-bold underline">this right</span>
-                              <span className="text-white/40">now</span>
-                            </>
-                          )}
-                          {p.id === 'comic' && (
-                            <span className="text-yellow-300 font-black" style={{ WebkitTextStroke: '1.5px black' }}>
-                              BOOM! <span className="text-rose-500">POW</span>
-                            </span>
-                          )}
-                          {p.id === 'beast' && (
-                            <span className="text-white font-black" style={{ WebkitTextStroke: '1.5px black' }}>
-                              100 MILLION <span className="text-[#FFD700]">DOLLARS</span>
-                            </span>
-                          )}
-                          {p.id === 'clean' && (
-                            <span className="inline-flex items-center justify-center whitespace-nowrap leading-normal text-white/80 font-medium px-3 py-1 rounded-full bg-white/10 text-[11px]">
-                              Cinematic subtitle flow
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2: PLACEMENT */}
-            {activeTab === 'placement' && (
-              <div className="space-y-5">
-                <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
-                    Caption Placement & Safe Zones
+                <section className="space-y-3.5">
+                  <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-white">
+                    <Type size={14} className="text-[#e08a5c]" /> Type
                   </h3>
-                  <p className="text-xs text-white/50 mt-1">
-                    Select standard social media safe zones or slide to any vertical height
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {[
-                    { id: 'bottom', label: 'Bottom (18%)', desc: 'Standard lower third', pct: 18 },
-                    { id: 'middle', label: 'Middle (48%)', desc: 'Center of screen', pct: 48 },
-                    { id: 'divider', label: 'Divider (40%)', desc: 'Under streamer split', pct: 40 },
-                    { id: 'top', label: 'Top (82%)', desc: 'Headline position', pct: 82 },
-                  ].map((pos) => (
-                    <button
-                      key={pos.id}
-                      type="button"
-                      onClick={() => {
-                        setCaptionPosition(pos.id);
-                        setVerticalPercent(pos.pct);
-                      }}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                        captionPosition === pos.id
-                          ? 'bg-[#a8542c]/20 border-[#ba6238] text-white font-bold ring-1 ring-[#ba6238]'
-                          : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
-                      }`}
-                    >
-                      <p className="text-xs font-semibold">{pos.label}</p>
-                      <p className="text-[10px] text-white/40 mt-0.5">{pos.desc}</p>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="p-4 rounded-xl bg-[rgba(255,255,255,0.03)] border border-white/10 space-y-3">
-                  <div className="flex items-center justify-between text-xs font-semibold text-white">
-                    <span>Continuous Vertical Position</span>
-                    <span className="font-mono text-[#ba6238] font-bold">{verticalPercent}% from bottom</span>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="space-y-1.5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+                        Font
+                      </span>
+                      <select
+                        value={editor.font}
+                        onChange={(e) => update({ font: e.target.value }, 'font')}
+                        className="w-full cursor-pointer rounded-xl border border-white/10 bg-white/5 p-2.5 text-xs font-medium text-white focus:border-[#ba6238] focus:outline-none"
+                      >
+                        {CAPTION_FONTS.map((font) => (
+                          <option key={font.name} value={font.name} className="bg-[#141822]">
+                            {font.label} — {font.note}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <Slider
+                      label="Size"
+                      value={editor.fontSize}
+                      min={28}
+                      max={160}
+                      onChange={(v) => update({ fontSize: v }, 'font-size')}
+                      suffix="px"
+                    />
+                    <Slider
+                      label="Outline"
+                      value={editor.outline}
+                      min={0}
+                      max={28}
+                      onChange={(v) => update({ outline: v }, 'outline')}
+                      suffix="px"
+                    />
+                    <Slider
+                      label="Shadow"
+                      value={editor.shadow}
+                      min={0}
+                      max={20}
+                      onChange={(v) => update({ shadow: v }, 'shadow')}
+                      suffix="px"
+                    />
+                    <Slider
+                      label="Tracking"
+                      value={editor.letterSpacing}
+                      min={-3}
+                      max={10}
+                      step={0.5}
+                      onChange={(v) => update({ letterSpacing: v }, 'tracking')}
+                      suffix="px"
+                    />
+                    <Slider
+                      label="Line height"
+                      value={editor.lineHeight}
+                      min={0.85}
+                      max={1.8}
+                      step={0.01}
+                      onChange={(v) => update({ lineHeight: v }, 'line-height')}
+                      format={(v) => v.toFixed(2)}
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min="10"
-                    max="85"
-                    value={verticalPercent}
-                    onChange={(e) => {
-                      setVerticalPercent(parseInt(e.target.value, 10));
-                      setCaptionPosition('custom');
-                    }}
-                    className="w-full h-2 bg-white/15 rounded-lg appearance-none cursor-pointer accent-[#ba6238]"
+                </section>
+
+                <section className="space-y-3">
+                  <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-white">
+                    <Palette size={14} className="text-[#e08a5c]" /> Colour
+                  </h3>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+                        Base text
+                      </span>
+                      <span className="font-mono text-[11px] text-white/50">{editor.primaryColor}</span>
+                    </div>
+                    <Swatches
+                      value={editor.primaryColor}
+                      onChange={(v) => update({ primaryColor: v }, 'primary')}
+                    />
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+                        Active word
+                      </span>
+                      <span className="font-mono text-[11px] text-white/50">
+                        {editor.activeColor || 'off'}
+                      </span>
+                    </div>
+                    <Swatches
+                      value={editor.activeColor}
+                      onChange={(v) => update({ activeColor: v }, 'active')}
+                      allowNone
+                    />
+                  </div>
+                </section>
+
+                <section className="space-y-2.5">
+                  <Toggle
+                    label="UPPERCASE"
+                    hint="Force capitals for readability."
+                    checked={editor.uppercase}
+                    onChange={(v) => update({ uppercase: v })}
                   />
-                  <div className="flex justify-between text-[10px] text-white/40 font-mono">
-                    <span>10% (Bottom)</span>
-                    <span>48% (Center)</span>
-                    <span>85% (Top)</span>
-                  </div>
-                </div>
-              </div>
+                  <Toggle
+                    label="Pop-in animation"
+                    hint="Caption group snaps in at 112% and settles."
+                    checked={editor.pop}
+                    onChange={(v) => update({ pop: v })}
+                  />
+                  <Toggle
+                    label="Background plate"
+                    hint="Rounded translucent plate behind each caption group."
+                    checked={editor.pill}
+                    onChange={(v) => update({ pill: v })}
+                  />
+                  {editor.pill && (
+                    <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+                          Plate colour
+                        </span>
+                        <span className="font-mono text-[11px] text-white/50">{editor.pillColor}</span>
+                      </div>
+                      <Swatches
+                        value={editor.pillColor}
+                        onChange={(v) => update({ pillColor: v }, 'pill-color')}
+                      />
+                      <Slider
+                        label="Plate opacity"
+                        value={editor.pillAlpha}
+                        min={0.1}
+                        max={0.95}
+                        step={0.05}
+                        onChange={(v) => update({ pillAlpha: v }, 'pill-alpha')}
+                        format={(v) => `${Math.round(v * 100)}%`}
+                      />
+                    </div>
+                  )}
+                </section>
+              </>
             )}
 
-            {/* TAB 3: TYPOGRAPHY & COLORS */}
-            {activeTab === 'typography' && (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-white uppercase tracking-wider">
-                      Font Family
-                    </label>
-                    <select
-                      value={font}
-                      onChange={(e) => setFont(e.target.value)}
-                      className="w-full p-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs font-medium focus:outline-none focus:border-[#ba6238]"
-                    >
-                      {FONTS.map((f) => (
-                        <option key={f} value={f} className="bg-[#141822] text-white">
-                          {f}
-                        </option>
-                      ))}
-                    </select>
+            {/* ---------------- LAYOUT ---------------- */}
+            {activeTab === 'layout' && (
+              <>
+                <section className="space-y-3">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                      Placement
+                    </h3>
+                    <p className="mt-1 text-xs text-white/45">
+                      Or drag the captions directly on the video.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                    {POSITIONS.map((pos) => (
+                      <button
+                        key={pos.id}
+                        type="button"
+                        onClick={() =>
+                          update({ position: pos.id, marginV: pos.marginV }, `pos-${pos.id}`)
+                        }
+                        className={`cursor-pointer rounded-xl border p-2.5 text-left transition-all ${
+                          editor.position === pos.id
+                            ? 'border-[#ba6238] bg-[#a8542c]/20 text-white ring-1 ring-[#ba6238]'
+                            : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <p className="text-xs font-semibold">{pos.label}</p>
+                        <p className="mt-0.5 text-[10px] text-white/40">{pos.hint}</p>
+                      </button>
+                    ))}
                   </div>
 
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs font-bold text-white uppercase tracking-wider">
-                      <span>Font Size</span>
-                      <span className="font-mono text-[#ba6238]">{fontSize}px</span>
+                  <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex items-center justify-between text-xs font-semibold text-white">
+                      <span>Vertical position</span>
+                      <span className="font-mono text-[#e08a5c]">
+                        {Math.round((editor.marginV / 1920) * 100)}% from bottom
+                      </span>
                     </div>
                     <input
                       type="range"
-                      min="44"
-                      max="108"
-                      value={fontSize}
-                      onChange={(e) => setFontSize(parseInt(e.target.value, 10))}
-                      className="w-full h-2 mt-2 bg-white/15 rounded-lg appearance-none cursor-pointer accent-[#ba6238]"
+                      min={80}
+                      max={1780}
+                      value={editor.marginV}
+                      onChange={(e) =>
+                        update(
+                          {
+                            marginV: Number(e.target.value),
+                            position: 'custom',
+                          },
+                          'margin'
+                        )
+                      }
+                      className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-white/15 accent-[#c96a3d]"
                     />
-                  </div>
-                </div>
-
-                {/* Color Palettes */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Active Highlight Color */}
-                  <div className="p-3.5 rounded-xl bg-[rgba(255,255,255,0.03)] border border-white/10 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                        <Palette size={13} className="text-[#ba6238]" />
-                        <span>Active Highlight Color</span>
-                      </label>
-                      <span className="text-[11px] font-mono text-white/60">{activeColor}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {SWATCHES.map((hex) => (
-                        <button
-                          key={hex}
-                          type="button"
-                          onClick={() => setActiveColor(hex)}
-                          style={{ backgroundColor: hex }}
-                          className={`w-7 h-7 rounded-lg border transition-all cursor-pointer ${
-                            activeColor.toUpperCase() === hex.toUpperCase()
-                              ? 'border-white scale-110 shadow-lg ring-2 ring-[#ba6238]'
-                              : 'border-white/20 hover:scale-105'
-                          }`}
-                        />
-                      ))}
+                    <div className="flex justify-between font-mono text-[10px] text-white/35">
+                      <span>bottom</span>
+                      <span>middle</span>
+                      <span>top</span>
                     </div>
                   </div>
 
-                  {/* Base Text Color */}
-                  <div className="p-3.5 rounded-xl bg-[rgba(255,255,255,0.03)] border border-white/10 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                        <Palette size={13} className="text-white/60" />
-                        <span>Base Text Color</span>
-                      </label>
-                      <span className="text-[11px] font-mono text-white/60">{primaryColor}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {SWATCHES.slice(0, 5).map((hex) => (
-                        <button
-                          key={hex}
-                          type="button"
-                          onClick={() => setPrimaryColor(hex)}
-                          style={{ backgroundColor: hex }}
-                          className={`w-7 h-7 rounded-lg border transition-all cursor-pointer ${
-                            primaryColor.toUpperCase() === hex.toUpperCase()
-                              ? 'border-white scale-110 shadow-lg ring-2 ring-white/50'
-                              : 'border-white/20 hover:scale-105'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Uppercase Switch */}
-                <div className="p-3.5 rounded-xl bg-[rgba(255,255,255,0.03)] border border-white/10 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-bold text-white">UPPERCASE Text</p>
-                    <p className="text-[11px] text-white/50">
-                      Force all words into clean capital letters for high readability
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setUppercase(!uppercase)}
-                    className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
-                      uppercase ? 'bg-[#a8542c]' : 'bg-white/20'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                        uppercase ? 'left-6' : 'left-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 4: HOOK & HEADLINE */}
-            {activeTab === 'hook' && (
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <Flame size={13} className="text-[#ba6238]" />
-                    <span>Opening Hook Headline</span>
-                  </label>
-                  <p className="text-xs text-white/50">
-                    High-contrast headline badge that flashes at the top during the first 3 seconds
-                  </p>
-                  <input
-                    type="text"
-                    value={hook}
-                    onChange={(e) => setHook(e.target.value)}
-                    placeholder="e.g. Wait until you see the ending..."
-                    className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white text-xs font-medium focus:outline-none focus:border-[#ba6238]"
+                  <Toggle
+                    label="Safe-zone guides"
+                    hint="Marks the top UI band and the lower caption/UI band."
+                    checked={showSafeZones}
+                    onChange={setShowSafeZones}
                   />
-                </div>
+                </section>
 
-                <div className="p-3.5 rounded-xl bg-[rgba(255,255,255,0.03)] border border-white/10 space-y-2">
-                  <span className="text-xs font-bold text-white">Hook Preview</span>
-                  <div className="p-3 rounded-xl bg-black/70 border border-white/15 text-center">
-                    <p className="text-xs font-black text-white uppercase tracking-wider line-clamp-2">
-                      {hook || 'YOUR HOOK HEADLINE WILL DISPLAY HERE'}
+                <section className="space-y-3.5">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                    Grouping
+                  </h3>
+                  <Slider
+                    label="Words per caption"
+                    value={editor.words}
+                    min={1}
+                    max={8}
+                    onChange={(v) => update({ words: v }, 'words')}
+                  />
+                  <Slider
+                    label="Max characters per line"
+                    value={editor.chars}
+                    min={8}
+                    max={40}
+                    onChange={(v) => update({ chars: v }, 'chars')}
+                  />
+                  <p className="text-[11px] leading-relaxed text-white/40">
+                    Groups also break on punctuation and after 2.6s, exactly like the
+                    export.
+                  </p>
+                </section>
+
+                <section className="space-y-2.5">
+                  <Toggle
+                    label="Censor profanity"
+                    hint="Masks flagged words in both preview and export."
+                    checked={editor.censor}
+                    onChange={(v) => update({ censor: v })}
+                  />
+                </section>
+              </>
+            )}
+
+            {/* ---------------- TEXT ---------------- */}
+            {activeTab === 'text' && (
+              <>
+                <section className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                        Transcript
+                      </h3>
+                      <p className="mt-1 text-[11px] text-white/45">
+                        Edit any word. Clear it to drop the word from the clip.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => update({ overrides: {} })}
+                      disabled={editedCount === 0}
+                      className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      <Trash2 size={12} /> Restore all
+                    </button>
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={showTranscriptSearch}
+                      onChange={(e) => setShowTranscriptSearch(e.target.value)}
+                      placeholder="Search the transcript…"
+                      className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-3 pr-3 text-xs text-white placeholder:text-white/30 focus:border-[#ba6238] focus:outline-none"
+                    />
+                  </div>
+
+                  {loadState === 'loading' && (
+                    <p className="flex items-center gap-2 text-xs text-white/50">
+                      <Loader2 size={12} className="animate-spin" /> Loading words…
+                    </p>
+                  )}
+                  {loadState === 'ready' && plan.groups.length === 0 && (
+                    <p className="text-xs text-white/50">
+                      No words in this range. Widen the trim or restore deleted words.
+                    </p>
+                  )}
+
+                  <div className="max-h-[52vh] space-y-1.5 overflow-y-auto pr-1">
+                    {transcriptGroups.map((group, gi) => {
+                      const groupVideoTime = localTrimStart + group.start;
+                      const isActive = activeGroup === group;
+                      return (
+                        <div
+                          key={`${group.start}-${gi}`}
+                          className={`rounded-xl border px-2.5 py-2 transition-colors ${
+                            isActive
+                              ? 'border-[#ba6238]/60 bg-[#a8542c]/10'
+                              : 'border-white/[0.06] bg-white/[0.02]'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => seekTo(groupVideoTime)}
+                            className="mb-1.5 flex cursor-pointer items-center gap-1 font-mono text-[10px] text-white/40 transition-colors hover:text-[#e08a5c]"
+                          >
+                            <Timer size={10} />
+                            {formatTime(group.start)}
+                          </button>
+                          <div className="flex flex-wrap items-center gap-1">
+                            {group.lines.flat().map((word) => {
+                              const key = overrideKey(word);
+                              const edited = key in (editor.overrides || {});
+                              return (
+                                <input
+                                  key={key}
+                                  value={word.text}
+                                  onFocus={() => seekTo(localTrimStart + word.start)}
+                                  onChange={(e) =>
+                                    update(
+                                      {
+                                        overrides: {
+                                          ...(editor.overrides || {}),
+                                          [key]: e.target.value,
+                                        },
+                                      },
+                                      `word-${key}`
+                                    )
+                                  }
+                                  style={{
+                                    width: `${Math.max(2, (word.text.length || 1) + 1)}ch`,
+                                  }}
+                                  className={`rounded-md border px-1.5 py-0.5 font-mono text-[11px] outline-none transition-colors ${
+                                    edited
+                                      ? 'border-[#ba6238]/60 bg-[#a8542c]/15 text-amber-100'
+                                      : 'border-transparent bg-white/[0.06] text-white/85 focus:border-[#ba6238] focus:bg-white/10'
+                                  }`}
+                                  spellCheck={false}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {editedCount > 0 && (
+                    <p className="text-[11px] text-amber-300/70">
+                      {editedCount} word{editedCount === 1 ? '' : 's'} edited. Ctrl+Z undoes.
+                    </p>
+                  )}
+                </section>
+              </>
+            )}
+
+            {/* ---------------- TRIM ---------------- */}
+            {activeTab === 'timeline' && (
+              <>
+                <section className="space-y-3">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                      Trim the clip
+                    </h3>
+                    <p className="mt-1 text-[11px] text-white/45">
+                      Drag the handles, or press <kbd className="rounded bg-white/10 px-1">[</kbd>{' '}
+                      / <kbd className="rounded bg-white/10 px-1">]</kbd> at the playhead.
+                    </p>
+                  </div>
+
+                  <div
+                    ref={trimBarRef}
+                    onPointerMove={onTrimPointerMove}
+                    onPointerUp={onTrimPointerUp}
+                    onPointerCancel={onTrimPointerUp}
+                    onClick={(e) => seekTo(trimTimeAt(e.clientX))}
+                    className="relative h-14 cursor-pointer touch-none overflow-hidden rounded-xl border border-white/10 bg-black/40"
+                  >
+                    <div
+                      className="absolute inset-y-0 left-0 bg-black/55"
+                      style={{ width: `${(localTrimStart / Math.max(0.1, duration)) * 100}%` }}
+                    />
+                    <div
+                      className="absolute inset-y-0 right-0 bg-black/55"
+                      style={{
+                        width: `${Math.max(
+                          0,
+                          100 - (localTrimEnd / Math.max(0.1, duration)) * 100
+                        )}%`,
+                      }}
+                    />
+                    <div
+                      className="absolute inset-y-1 rounded-lg border-2 border-[#c96a3d] bg-[#a8542c]/20"
+                      style={{
+                        left: `${(localTrimStart / Math.max(0.1, duration)) * 100}%`,
+                        width: `${((localTrimEnd - localTrimStart) / Math.max(0.1, duration)) * 100}%`,
+                      }}
+                    />
+                    <div
+                      className="absolute inset-y-0 z-20 w-0.5 bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]"
+                      style={{ left: `${(currentTime / Math.max(0.1, duration)) * 100}%` }}
+                    />
+                    {['start', 'end'].map((side) => {
+                      const value = side === 'start' ? localTrimStart : localTrimEnd;
+                      return (
+                        <div
+                          key={side}
+                          role="slider"
+                          tabIndex={0}
+                          aria-label={`Trim ${side}`}
+                          onPointerDown={onTrimHandleDown(side)}
+                          className="absolute inset-y-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize rounded-sm bg-[#e08a5c]/90 hover:bg-[#ffa06a]"
+                          style={{ left: `${(value / Math.max(0.1, duration)) * 100}%` }}
+                        >
+                          <span className="absolute inset-y-3 left-1/2 w-0.5 -translate-x-1/2 rounded bg-black/40" />
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-white/45">
+                        In
+                      </p>
+                      <p className="mt-0.5 font-mono text-sm font-bold text-white">
+                        {formatTime(localTrimStart)}
+                      </p>
+                      <div className="mt-2 flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setTrimLocal('start', currentTime)}
+                          className="cursor-pointer rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold text-white/70 hover:bg-white/10"
+                        >
+                          Set to playhead
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-white/45">
+                        Out
+                      </p>
+                      <p className="mt-0.5 font-mono text-sm font-bold text-white">
+                        {formatTime(localTrimEnd)}
+                      </p>
+                      <div className="mt-2 flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setTrimLocal('end', currentTime)}
+                          className="cursor-pointer rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold text-white/70 hover:bg-white/10"
+                        >
+                          Set to playhead
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
+                      Output length
+                    </span>
+                    <span className="font-mono text-sm font-bold text-[#e08a5c]">
+                      {trimmedDuration.toFixed(2)}s
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: '15s', value: 15 },
+                      { label: '30s', value: 30 },
+                      { label: '45s', value: 45 },
+                      { label: '60s', value: 60 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => {
+                          const end = Math.min(
+                            duration,
+                            localTrimStart + preset.value
+                          );
+                          update({ trimEnd: sourceStart + end }, `trim-len-${preset.value}`);
+                        }}
+                        className="cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        update(
+                          { trimStart: sourceStart, trimEnd: sourceStart + duration },
+                          'trim-full'
+                        )
+                      }
+                      className="cursor-pointer rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      Full clip
+                    </button>
+                  </div>
+                </section>
+
+                <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
+                  <h4 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-white/60">
+                    <ShieldCheck size={12} /> Keyboard
+                  </h4>
+                  <ul className="space-y-1 text-[11px] text-white/45">
+                    <li><kbd className="rounded bg-white/10 px-1">Space</kbd> play / pause</li>
+                    <li><kbd className="rounded bg-white/10 px-1">←</kbd> <kbd className="rounded bg-white/10 px-1">→</kbd> nudge 0.1s (Shift = 1s)</li>
+                    <li><kbd className="rounded bg-white/10 px-1">[</kbd> trim in · <kbd className="rounded bg-white/10 px-1">]</kbd> trim out</li>
+                    <li><kbd className="rounded bg-white/10 px-1">Ctrl+Z</kbd> undo · <kbd className="rounded bg-white/10 px-1">Ctrl+Shift+Z</kbd> redo</li>
+                  </ul>
+                </section>
+              </>
+            )}
+
+            {/* ---------------- HOOK ---------------- */}
+            {activeTab === 'hook' && (
+              <section className="space-y-4">
+                <div>
+                  <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-white">
+                    <Flame size={14} className="text-[#e08a5c]" /> Opening hook
+                  </h3>
+                  <p className="mt-1 text-[11px] text-white/45">
+                    Flashes at the top for the first 3.5 seconds.
+                  </p>
+                </div>
+                <textarea
+                  value={editor.hook}
+                  onChange={(e) => update({ hook: e.target.value }, 'hook')}
+                  rows={3}
+                  placeholder="e.g. Wait until you see the ending…"
+                  className="w-full resize-none rounded-xl border border-white/10 bg-white/5 p-3 text-xs font-medium text-white placeholder:text-white/30 focus:border-[#ba6238] focus:outline-none"
+                />
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/45">
+                    Preview
+                  </p>
+                  <div className="rounded-xl border border-white/10 bg-black/70 p-3 text-center">
+                    <p
+                      className="text-xs font-black uppercase tracking-wider text-white"
+                      style={{ fontFamily: `"${editor.font}", sans-serif` }}
+                    >
+                      {editor.hook || 'Your hook headline'}
                     </p>
                   </div>
                 </div>
-              </div>
+                <button
+                  type="button"
+                  onClick={() => update({ hook: currentClip?.title || '' })}
+                  className="cursor-pointer rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  Use clip title
+                </button>
+              </section>
             )}
 
-            {/* TAB 5: FRAMING */}
+            {/* ---------------- FRAMING ---------------- */}
             {activeTab === 'framing' && (
-              <div className="space-y-4">
+              <section className="space-y-3">
                 <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
-                    Video Framing Mode
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                    Framing
                   </h3>
-                  <p className="text-xs text-white/50 mt-1">
-                    Select how the video is framed into 9:16 vertical portrait
+                  <p className="mt-1 text-[11px] text-white/45">
+                    Preview updates instantly; the real reframe is baked on export.
                   </p>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[
-                    {
-                      id: 'crop',
-                      title: 'Smart Face-Track Crop',
-                      desc: 'AI tracks active speakers and centers 9:16 frame dynamically',
-                    },
-                    {
-                      id: 'dynamic_landscape',
-                      title: 'Hybrid Smart Fit',
-                      desc: 'Crops faces when talking, auto-fits wide landscape views',
-                    },
-                    {
-                      id: 'fit_blur',
-                      title: 'Fit with Blurred Background',
-                      desc: 'Full 16:9 frame centered with soft blurred bars top and bottom',
-                    },
-                    {
-                      id: 'streamer_split',
-                      title: 'Streamer Split Screen',
-                      desc: 'Webcam facecam stacked on top, gameplay action below',
-                    },
-                  ].map((f) => (
-                    <div
-                      key={f.id}
-                      onClick={() => setFraming(f.id)}
-                      className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
-                        framing === f.id
-                          ? 'bg-[#a8542c]/20 border-[#ba6238] text-white ring-1 ring-[#ba6238]'
-                          : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  {FRAMING_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => update({ framing: option.id }, 'framing')}
+                      className={`cursor-pointer rounded-xl border p-3 text-left transition-all ${
+                        editor.framing === option.id
+                          ? 'border-[#ba6238] bg-[#a8542c]/20 text-white ring-1 ring-[#ba6238]'
+                          : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                       }`}
                     >
-                      <h4 className="text-xs font-bold flex items-center justify-between">
-                        <span>{f.title}</span>
-                        {framing === f.id && <Check size={14} className="text-[#ba6238]" />}
+                      <h4 className="flex items-center justify-between text-xs font-bold">
+                        <span>{option.title}</span>
+                        {editor.framing === option.id && (
+                          <Check size={13} className="text-[#e08a5c]" />
+                        )}
                       </h4>
-                      <p className="text-[11px] text-white/50 mt-1 leading-snug">{f.desc}</p>
-                    </div>
+                      <p className="mt-1 text-[11px] leading-snug text-white/45">
+                        {option.desc}
+                      </p>
+                    </button>
                   ))}
                 </div>
-              </div>
+                <p className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-[11px] leading-relaxed text-white/40">
+                  Export re-renders from the original source with this framing, then burns
+                  the captions you see here.
+                </p>
+              </section>
             )}
           </div>
 
-          {/* Optional Burn-in status banner */}
+          {/* export bar */}
           {exportMessage && (
-            <div className="px-5 py-2.5 bg-emerald-500/20 border-t border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+            <div className="flex items-center gap-2 border-t border-emerald-500/25 bg-emerald-500/15 px-5 py-2 text-xs text-emerald-200">
+              <Check size={13} />
               <span>{exportMessage}</span>
             </div>
           )}
 
-          {/* Bottom Export & Download Bar */}
-          <div className="p-4 border-t border-rule bg-[#131720] flex items-center justify-between gap-3 shrink-0">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-rule bg-[#131720] p-3.5">
             <div className="flex items-center gap-2">
               <a
                 href={videoUrl}
                 download={filename}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Download MP4 video"
+                className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/10"
               >
                 <Download size={13} />
-                <span>Download MP4</span>
+                <span className="hidden sm:inline">Clean MP4</span>
               </a>
-
               <a
                 href={srtUrl}
                 download={srtFilename}
-                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-mono transition-colors cursor-pointer"
-                title="Download Subtitles (.SRT)"
+                className="cursor-pointer rounded-xl bg-white/5 px-2.5 py-2 font-mono text-[11px] text-white/60 transition-colors hover:bg-white/10 hover:text-white"
               >
                 SRT
               </a>
+              <span className="hidden items-center gap-1 text-[10px] font-mono text-white/30 sm:flex">
+                <Gauge size={11} /> {Math.round(trimmedDuration)}s ·{' '}
+                {plan.groups.length} groups
+              </span>
             </div>
 
-            {/* Optional one-click button to bake custom subtitles into the MP4 file */}
             <button
               type="button"
-              disabled={isExporting}
-              onClick={handleExportBurnedIn}
-              className="px-4 py-2 rounded-xl bg-[#a8542c]/20 hover:bg-[#a8542c]/30 border border-[#ba6238]/50 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Permanently bake customized ASS subtitles into the MP4"
+              disabled={isExporting || loadState !== 'ready'}
+              onClick={handleExport}
+              className="flex cursor-pointer items-center gap-1.5 rounded-xl border border-[#ba6238]/50 bg-[#a8542c]/25 px-3.5 py-2 text-xs font-bold text-white transition-all hover:bg-[#a8542c]/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isExporting ? (
                 <>
-                  <RefreshCw size={13} className="animate-spin text-[#ba6238]" />
-                  <span>Baking Subtitles (3s)...</span>
+                  <RefreshCw size={13} className="animate-spin text-[#e08a5c]" />
+                  <span>Rendering…</span>
                 </>
               ) : (
                 <>
-                  <Sparkles size={13} className="text-[#ba6238]" />
-                  <span>Export Burned-In MP4</span>
+                  <Sparkles size={13} className="text-[#e08a5c]" />
+                  <span>Export burned-in MP4</span>
                 </>
               )}
             </button>

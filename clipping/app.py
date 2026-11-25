@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from yt_dlp import YoutubeDL
 
 from . import pipeline
-from .config import DATA_DIR, ROOT, Settings, settings_for
+from .config import DATA_DIR, FONTS_DIR, ROOT, Settings, settings_for
 from .llm import provider_available
 from .render import check_tools
 from .utils import ToolError, read_json, strip_ansi, video_info, write_json
@@ -58,11 +58,33 @@ def clean_stale_jobs():
 def root_health() -> dict:
     return {"ok": True, "status": "healthy"}
 
+
+@app.get("/api/fonts")
+def list_caption_fonts() -> dict:
+    """Caption fonts bundled for the editor and libass burn-in."""
+    files = {
+        "Anton": "Anton-Regular.ttf",
+        "Archivo Black": "ArchivoBlack-Regular.ttf",
+        "Bebas Neue": "BebasNeue-Regular.ttf",
+        "Poppins": "Poppins-Bold.ttf",
+        "Montserrat": "Montserrat-Variable.ttf",
+        "Rubik": "Rubik-Variable.ttf",
+        "Oswald": "Oswald-Variable.ttf",
+    }
+    fonts = []
+    for name, filename in files.items():
+        path = FONTS_DIR / filename
+        if path.exists():
+            fonts.append({"name": name, "file": filename, "url": f"/caption-fonts/{filename}"})
+    return {"fonts": fonts}
+
 app.mount("/media", StaticFiles(directory=str(JOBS_DIR)), name="media")
 if (DIST_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
 if (DIST_DIR / "fonts").exists():
     app.mount("/fonts", StaticFiles(directory=str(DIST_DIR / "fonts")), name="fonts")
+if FONTS_DIR.exists():
+    app.mount("/caption-fonts", StaticFiles(directory=str(FONTS_DIR)), name="caption-fonts")
 
 POOL = ThreadPoolExecutor(max_workers=int(os.getenv("CLIP_WORKERS", "1")), thread_name_prefix="clip")
 LOCK = threading.Lock()
@@ -301,6 +323,7 @@ def _normalize_clips(job_id: str, clips: list[dict], check_exists: bool = False)
         if not isinstance(c, dict):
             continue
         c_copy = c.copy()
+        c_copy["jobId"] = job_id
         video_path = c.get("video") or ""
         fname = c.get("filename") or (Path(video_path).name if video_path else f"{c.get('slug', 'clip')}.mp4")
         c_copy["filename"] = fname
@@ -808,6 +831,19 @@ class ClipCustomizeRequest(BaseModel):
     end: float | None = None
     censor: bool | None = None
     framing: str | None = None
+    # Rich caption styling (editor "Style" panel)
+    outline: int | None = None
+    shadow: int | None = None
+    pop: bool | None = None
+    pill: bool | None = None
+    pill_color: str | None = None
+    pill_alpha: float | None = None
+    words: int | None = None
+    chars: int | None = None
+    letter_spacing: float | None = None
+    line_height: float | None = None
+    # Word-level text edits keyed by the word's absolute start time, e.g. "42.310".
+    word_overrides: dict[str, str] | None = None
 
 
 @app.get("/api/jobs/{job_id}/clips/{clip_identifier}/words")
@@ -820,6 +856,26 @@ def get_clip_words_endpoint(job_id: str, clip_identifier: str):
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/jobs/{job_id}/clips/{clip_identifier}/editor-state")
+def save_editor_state_endpoint(job_id: str, clip_identifier: str, payload: dict):
+    """Autosave the editor's style/trim/text state (no re-render)."""
+    path = _job_path(job_id)
+    try:
+        updated_clip = pipeline.save_editor_state(path, clip_identifier, payload)
+    except ToolError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    with LOCK:
+        if job_id in JOB_CACHE:
+            job = JOB_CACHE[job_id]
+            for i, c in enumerate(job.get("clips") or []):
+                if c.get("slug") == updated_clip.get("slug"):
+                    job["clips"][i] = updated_clip
+                    break
+    return {"ok": True}
 
 
 @app.post("/api/jobs/{job_id}/clips/{clip_identifier}/clean")

@@ -18,6 +18,10 @@ except Exception:  # pragma: no cover
 DATA_DIR = Path(os.getenv("CLIP_DATA_DIR", str(ROOT / "data"))).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+# Caption fonts bundled with the app. The editor previews them with @font-face and
+# libass loads the same files through `fontsdir`, so the burn matches the preview.
+FONTS_DIR = Path(os.getenv("CLIP_FONTS_DIR", str(ROOT / "clipping" / "fonts"))).resolve()
+
 
 def load_ai_config() -> dict:
     p = DATA_DIR / "ai_config.json"

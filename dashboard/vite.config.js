@@ -17,6 +17,7 @@ export default defineConfig({
     proxy: {
       '/api': { target: backend, changeOrigin: true },
       '/media': { target: backend, changeOrigin: true },
+      '/caption-fonts': { target: backend, changeOrigin: true },
     }
   }
 })

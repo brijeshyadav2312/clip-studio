@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import captions, highlights, ingest, reframe, render, sponsorblock, transcribe
-from .config import DATA_DIR, Settings
+from .config import DATA_DIR, Settings, settings_for
 from .utils import ToolError, log, read_json, video_info, write_json
 
 Report = Callable[[str, float, str], None]
@@ -295,13 +295,27 @@ def get_clip_words(job_dir: Path, clip_identifier: str) -> dict:
             target_clip["end"],
         )
 
-    clip_start = target_clip["start"]
+    clip_start = float(target_clip["start"])
+    clip_end = float(target_clip["end"])
     local_words = []
     for w in raw_words:
+        abs_start = float(w["start"])
+        abs_end = float(w["end"])
+        # `_words_in` keeps whole transcript segments, so it also returns words
+        # that sit just outside the clip. Drop those instead of clamping them
+        # onto 0.0 (a trimmed export would otherwise start with a pile of
+        # zero-length words from before the new in-point).
+        if abs_end <= clip_start or abs_start >= clip_end:
+            continue
         local_words.append({
             "word": w.get("word", ""),
-            "start": max(0.0, round(float(w["start"]) - clip_start, 3)),
-            "end": max(0.0, round(float(w["end"]) - clip_start, 3)),
+            "text": w.get("word", ""),
+            "start": max(0.0, round(abs_start - clip_start, 3)),
+            "end": max(0.0, round(abs_end - clip_start, 3)),
+            # Absolute source times: word overrides are keyed by these so they
+            # survive a trim or a re-render.
+            "abs_start": round(abs_start, 3),
+            "abs_end": round(abs_end, 3),
         })
 
     return {
@@ -312,7 +326,35 @@ def get_clip_words(job_dir: Path, clip_identifier: str) -> dict:
         "duration": target_clip.get("duration", round(target_clip["end"] - target_clip["start"], 2)),
         "hook": target_clip.get("hook", ""),
         "title": target_clip.get("title", ""),
+        "editor_state": target_clip.get("editor_state"),
+        "caption_options": target_clip.get("caption_options"),
     }
+
+
+def save_editor_state(job_dir: Path, clip_identifier: str, state: dict) -> dict:
+    """Persist the editor's live state without re-rendering the clip.
+
+    Style tweaks are applied in the browser, so autosave only needs to remember
+    them; the MP4 is re-rendered when the user exports.
+    """
+    manifest_path = job_dir / "job.json"
+    if not manifest_path.exists():
+        raise ToolError("Job not found")
+    manifest = read_json(manifest_path)
+    idx, clip = _resolve_clip(manifest, clip_identifier)
+    if clip is None:
+        raise ToolError(f"Clip '{clip_identifier}' not found in job")
+    if not isinstance(state, dict):
+        raise ToolError("Editor state must be an object")
+    clip["editor_state"] = state
+    if state.get("hook") is not None:
+        clip["hook"] = str(state["hook"])
+    framing = state.get("framing")
+    if framing:
+        clip.setdefault("reframe", {})["mode"] = framing
+    manifest["clips"][idx] = clip
+    write_json(manifest_path, manifest)
+    return clip
 
 
 def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) -> dict:
@@ -365,7 +407,7 @@ def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) ->
     if end <= start + 0.5:
         end = start + 5.0
 
-    settings = Settings(**(manifest.get("options") or {}))
+    settings = settings_for(**(manifest.get("options") or {}))
     if custom_options.get("framing"):
         settings.layout = custom_options["framing"]
 
@@ -377,6 +419,7 @@ def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) ->
     if transcript_path.exists():
         transcript = read_json(transcript_path)
         words = highlights._words_in(transcript.get("segments") or [], start, end)
+        words = captions.apply_word_overrides(words, custom_options.get("word_overrides"))
 
     clip_dir = _clip_dir(job_dir)
     rf_dir = job_dir / "rf"
@@ -419,6 +462,13 @@ def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) ->
         target_clip["clean_video"] = f"clips/{clean.name}"
     if custom_options.get("caption_style"):
         target_clip["caption_style"] = custom_options["caption_style"]
+    # Persist the editor payload so reopening the clip restores the same look.
+    target_clip["caption_options"] = {
+        k: v for k, v in custom_options.items()
+        if k not in ("start", "end", "framing")
+    }
+    if custom_options.get("framing"):
+        target_clip.setdefault("reframe", {})["mode"] = custom_options["framing"]
 
     manifest["clips"][target_idx] = target_clip
     write_json(manifest_path, manifest)
@@ -463,16 +513,22 @@ def clip_caption_plan(job_dir: Path, clip_identifier: str, custom_options: dict 
         raise ToolError(f"Clip '{clip_identifier}' not found in job")
 
     options = custom_options or {}
-    settings = Settings(**(manifest.get("options") or {}))
+    settings = settings_for(**(manifest.get("options") or {}))
     layout = (clip.get("reframe") or {}).get("mode") or settings.layout
 
-    start = float(clip["start"])
-    end = float(clip["end"])
+    source_start = float(clip["start"])
+    source_end = float(clip["end"])
+    start = float(options.get("start", source_start))
+    end = float(options.get("end", source_end))
+    if end <= start + 0.5:
+        end = start + 5.0
+
     words: list[dict] = []
     transcript_path = job_dir / "transcript.json"
     if transcript_path.exists():
         transcript = read_json(transcript_path)
         words = highlights._words_in(transcript.get("segments") or [], start, end)
+        words = captions.apply_word_overrides(words, options.get("word_overrides"))
 
     hook = options.get("hook", clip.get("hook"))
     plan = captions.caption_plan(
@@ -487,6 +543,9 @@ def clip_caption_plan(job_dir: Path, clip_identifier: str, custom_options: dict 
         "slug": clip["slug"],
         "start": start,
         "end": end,
+        "source_start": source_start,
+        "source_end": source_end,
+        "offset": round(start - source_start, 3),
         "has_clean_master": clean.exists(),
     }
     return plan
@@ -524,7 +583,7 @@ def ensure_clean_master(job_dir: Path, clip_identifier: str) -> dict:
             "preview cannot be built. Re-run the job to edit this clip."
         )
 
-    settings = Settings(**(manifest.get("options") or {}))
+    settings = settings_for(**(manifest.get("options") or {}))
     mode = (clip.get("reframe") or {}).get("mode")
     if mode:
         settings.layout = mode

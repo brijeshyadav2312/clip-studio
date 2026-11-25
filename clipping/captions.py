@@ -21,14 +21,30 @@ PROFANITY = {
 
 STYLES = {
     # name: fontsize, uppercase, active colour, max words, max chars/line, pop animation
-    "wordpop": {"size": 70, "upper": True, "active": "&H0000FFFF&", "words": 4, "chars": 17, "pop": True},
-    "karaoke": {"size": 68, "upper": False, "active": "&H0000FFFF&", "words": 5, "chars": 19, "pop": False},
-    "hormozi": {"size": 104, "upper": True, "active": "&H0000FF00&", "words": 2, "chars": 13, "pop": True},
-    "clean": {"size": 58, "upper": False, "active": None, "words": 8, "chars": 26, "pop": False},
-    "neon": {"size": 76, "upper": True, "active": "&H00FFFF00&", "words": 3, "chars": 16, "pop": True},
-    "boxed": {"size": 68, "upper": True, "active": "&H0000D7FF&", "words": 3, "chars": 15, "pop": False},
-    "beast": {"size": 94, "upper": True, "active": "&H0000FFFF&", "words": 2, "chars": 12, "pop": True},
-    "comic": {"size": 86, "upper": True, "active": "&H0000FF00&", "words": 3, "chars": 14, "pop": True},
+    "wordpop": {"size": 70, "upper": True, "active": "&H0000FFFF&", "words": 4, "chars": 17, "pop": True,
+                "outline": 8, "shadow": 3, "pill": False, "pill_color": "#000000", "pill_alpha": 0.55,
+                "letter": 0, "line": 1.06},
+    "karaoke": {"size": 68, "upper": False, "active": "&H0000FFFF&", "words": 5, "chars": 19, "pop": False,
+                "outline": 6, "shadow": 2, "pill": True, "pill_color": "#000000", "pill_alpha": 0.55,
+                "letter": 0, "line": 1.12},
+    "hormozi": {"size": 104, "upper": True, "active": "&H0000FF00&", "words": 2, "chars": 13, "pop": True,
+                "outline": 12, "shadow": 5, "pill": False, "pill_color": "#000000", "pill_alpha": 0.55,
+                "letter": 0, "line": 1.0},
+    "clean": {"size": 58, "upper": False, "active": None, "words": 8, "chars": 26, "pop": False,
+              "outline": 3, "shadow": 2, "pill": True, "pill_color": "#000000", "pill_alpha": 0.5,
+              "letter": 0, "line": 1.18},
+    "neon": {"size": 76, "upper": True, "active": "&H00FFFF00&", "words": 3, "chars": 16, "pop": True,
+             "outline": 9, "shadow": 7, "pill": True, "pill_color": "#0B0B1A", "pill_alpha": 0.65,
+             "letter": 1, "line": 1.06},
+    "boxed": {"size": 68, "upper": True, "active": "&H0000D7FF&", "words": 3, "chars": 15, "pop": False,
+              "outline": 6, "shadow": 0, "pill": False, "pill_color": "#000000", "pill_alpha": 0.55,
+              "letter": 0, "line": 1.06},
+    "beast": {"size": 94, "upper": True, "active": "&H0000FFFF&", "words": 2, "chars": 12, "pop": True,
+              "outline": 14, "shadow": 6, "pill": False, "pill_color": "#000000", "pill_alpha": 0.55,
+              "letter": 0, "line": 1.0},
+    "comic": {"size": 86, "upper": True, "active": "&H0000FF00&", "words": 3, "chars": 14, "pop": True,
+              "outline": 12, "shadow": 8, "pill": False, "pill_color": "#000000", "pill_alpha": 0.55,
+              "letter": 0, "line": 1.02},
 }
 
 
@@ -54,9 +70,10 @@ YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,{font},{size},{primary},{primary},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},3,2,70,70,{margin_v},1
-Style: Clean,{font},{size},{primary},{primary},&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,3,2,2,80,80,{margin_v_clean},1
+Style: Cap,{font},{size},{primary},{primary},&H00000000,&H80000000,-1,0,0,0,100,100,{letter},0,1,{outline},{shadow},2,70,70,{margin_v},1
+Style: Clean,{font},{size},{primary},{primary},&H00000000,&H64000000,0,0,0,0,100,100,{letter},0,1,{outline},{shadow},2,80,80,{margin_v_clean},1
 Style: Hook,{font},72,&H00FFFFFF,&H00FFFFFF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,3,16,0,8,60,60,{margin_hook},1
+Style: Pill,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -157,6 +174,26 @@ def _wrap_word_objs(words: list[dict], max_chars: int) -> list[list[dict]]:
     return lines[:3] or [[]]
 
 
+def apply_word_overrides(words: list[dict], overrides: dict | None) -> list[dict]:
+    """Apply user text edits keyed by a word's absolute start time.
+
+    Empty overrides delete the word. This is shared by the burn, the SRT writer
+    and the editor plan so all three agree after a transcript edit.
+    """
+    if not overrides:
+        return words
+    out: list[dict] = []
+    for word in words:
+        key = f"{float(word.get('start', 0)):.3f}"
+        if key in overrides:
+            text = _escape(str(overrides[key] or ""))
+            if not text:
+                continue
+            word = {**word, "word": text}
+        out.append(word)
+    return out
+
+
 def plan_captions(
     words: list[dict],
     clip_start: float,
@@ -178,19 +215,59 @@ def plan_captions(
         style_name = "wordpop"
     style = dict(STYLES[style_name])
 
+    def _int_opt(key: str, lo: int, hi: int) -> None:
+        if custom.get(key) is None:
+            return
+        try:
+            style[key] = max(lo, min(hi, int(custom[key])))
+        except (TypeError, ValueError):
+            pass
+
+    def _float_opt(key: str, lo: float, hi: float, dest: str | None = None) -> None:
+        if custom.get(key) is None:
+            return
+        try:
+            style[dest or key] = max(lo, min(hi, float(custom[key])))
+        except (TypeError, ValueError):
+            pass
+
     if custom.get("font_size"):
-        style["size"] = int(custom["font_size"])
+        try:
+            style["size"] = max(24, min(200, int(custom["font_size"])))
+        except (TypeError, ValueError):
+            pass
     if custom.get("uppercase") is not None:
         style["upper"] = bool(custom["uppercase"])
-    active_hex = ass_to_hex(style.get("active"))
-    if custom.get("active_color"):
-        style["active"] = hex_to_ass_color(custom["active_color"])
-        active_hex = custom["active_color"]
+    _int_opt("words", 1, 8)
+    _int_opt("chars", 6, 40)
+    _int_opt("outline", 0, 30)
+    _int_opt("shadow", 0, 30)
+    _float_opt("letter_spacing", -5.0, 10.0, "letter")
+    _float_opt("line_height", 0.8, 1.8, "line")
+    _float_opt("pill_alpha", 0.0, 0.95)
+    if custom.get("pop") is not None:
+        style["pop"] = bool(custom["pop"])
+    if custom.get("pill") is not None:
+        style["pill"] = bool(custom["pill"])
+    if custom.get("pill_color"):
+        style["pill_color"] = str(custom["pill_color"])
+
+    active_hex = ass_to_hex(style.get("active")) if style.get("active") else None
+    if "active_color" in custom:
+        if custom["active_color"]:
+            style["active"] = hex_to_ass_color(custom["active_color"])
+            active_hex = custom["active_color"]
+        else:
+            # An explicit empty string means "no active-word highlight".
+            style["active"] = None
+            active_hex = None
 
     primary_hex = custom.get("primary_color") or "#FFFFFF"
     primary_color = hex_to_ass_color(primary_hex)
     font = custom.get("font") or getattr(settings, "font", None) or "Arial Black"
-    outline = int(custom.get("outline", 8 if style_name != "clean" else 3))
+    outline = int(style.get("outline", 8))
+    shadow = int(style.get("shadow", 3))
+    overrides = custom.get("word_overrides") or {}
 
     clip_duration = max(0.1, clip_end - clip_start)
 
@@ -201,12 +278,20 @@ def plan_captions(
         raw = word.get("word", "")
         if not raw or _SYMBOL_ONLY.match(raw.strip()):
             continue
-        text = _escape(raw)
-        if not text:
-            continue
-        if censor and text.lower().strip(".,!?") in PROFANITY:
+        abs_start = float(word["start"])
+        override = overrides.get(f"{abs_start:.3f}")
+        if override is not None:
+            text = _escape(str(override))
+            if not text:
+                continue
+        else:
+            text = _escape(raw)
+            if not text:
+                continue
+        censored = censor and text.lower().strip(".,!?") in PROFANITY
+        if censored:
             text = text[0] + "*" * max(2, len(text) - 1)
-        start = max(0.0, float(word["start"]) - clip_start)
+        start = max(0.0, abs_start - clip_start)
         end = max(0.0, min(clip_duration, float(word["end"]) - clip_start))
         if end <= start:
             end = min(clip_duration, start + 0.08)
@@ -214,7 +299,8 @@ def plan_captions(
             "start": round(start, 3),
             "end": round(end, 3),
             "word": text,
-            "muted": censor and word["word"].lower().strip(".,!?") in PROFANITY,
+            "abs_start": round(abs_start, 3),
+            "muted": censored,
         })
 
     deduped: list[dict] = []
@@ -263,7 +349,7 @@ def plan_captions(
     active_fill_hex = active_hex or primary_hex
     active_stroke_hex = "#000000"
     active_stroke = outline
-    if style_name == "boxed":
+    if style.get("active") and style_name == "boxed":
         active_fill_hex = "#000000"
         active_stroke_hex = custom.get("active_color") or "#FFE600"
         active_stroke = max(outline + 8, 16)
@@ -288,6 +374,15 @@ def plan_captions(
         "font": font,
         "size": int(style["size"]),
         "outline": outline,
+        "shadow": shadow,
+        "letter_spacing": float(style.get("letter", 0)),
+        "line_height": float(style.get("line", 1.06)),
+        "pill": bool(style.get("pill")),
+        "pill_color": style.get("pill_color", "#000000"),
+        "pill_alpha": float(style.get("pill_alpha", 0.55)),
+        "pill_pad": max(8, round(int(style["size"]) * 0.16)),
+        "words": int(style["words"]),
+        "chars": int(style["chars"]),
         "uppercase": bool(style["upper"]),
         "primary": primary_color,
         "primary_hex": primary_hex,
@@ -334,6 +429,49 @@ def _tagged_lines(lines: list[list[dict]], active_flat: int, plan: dict) -> str:
     return "\\N".join(out)
 
 
+def _plain_lines(lines: list[list[dict]], upper: bool) -> str:
+    return "\\N".join(
+        " ".join(w["word"].upper() if upper else w["word"] for w in line)
+        for line in lines
+    )
+
+
+def _rounded_rect_path(width: int, height: int, radius: int = 22) -> str:
+    r = max(0, min(radius, width // 2, height // 2))
+    k = round(r * 0.5523)
+    return (
+        f"m {r} 0 l {width - r} 0 "
+        f"b {width - r + k} 0 {width} {r - k} {width} {r} "
+        f"l {width} {height - r} "
+        f"b {width} {height - r + k} {width - r + k} {height} {width - r} {height} "
+        f"l {r} {height} "
+        f"b {r - k} {height} 0 {height - r + k} 0 {height - r} "
+        f"l 0 {r} "
+        f"b 0 {r - k} {r - k} 0 {r} 0"
+    )
+
+
+def _pill_event(group: dict, plan: dict) -> str:
+    """A rounded, semi-transparent plate drawn behind a caption group."""
+    lines = group["lines"]
+    longest = max((len(" ".join(w["word"] for w in line)) for line in lines), default=0)
+    width = max(180, min(1000, round(longest * plan["size"] * 0.5 + plan["pill_pad"] * 2)))
+    height = max(
+        48,
+        round(len(lines) * plan["size"] * plan["line_height"] + plan["pill_pad"] * 2),
+    )
+    # Bottom-anchored at the caption baseline + padding, extending upward.
+    y = max(0, 1920 - int(plan["margin_v"]) + plan["pill_pad"])
+    alpha = round((1.0 - max(0.0, min(1.0, plan["pill_alpha"]))) * 255)
+    fill = hex_to_ass_color(plan["pill_color"], 0)
+    path = _rounded_rect_path(width, height, radius=max(10, plan["pill_pad"] + 6))
+    return (
+        f"Dialogue: 0,{ass_time(group['start'])},{ass_time(group['end'])},Pill,,0,0,0,,"
+        f"{{\\an2\\pos(540,{y})\\p1\\bord0\\shad0\\1c{fill}\\alpha&H{alpha:02X}&}}"
+        f"{path}{{\\p0}}"
+    )
+
+
 def build(
     words: list[dict],
     clip_start: float,
@@ -349,7 +487,6 @@ def build(
         words, clip_start, clip_end, settings,
         custom_options=custom_options, layout=layout, censor=censor, hook=hook,
     )
-    style = plan["style"]
     style_name = plan["style_name"]
     primary_color = plan["primary"]
     active = plan["active"]
@@ -358,6 +495,8 @@ def build(
         font=plan["font"],
         size=plan["size"],
         outline=plan["outline"],
+        shadow=plan["shadow"],
+        letter=plan["letter_spacing"],
         primary=primary_color,
         margin_v=plan["margin_v"],
         margin_v_clean=plan["margin_v_clean"],
@@ -374,8 +513,13 @@ def build(
     for group in plan["groups"]:
         lines = group["lines"]
         flat_words = [word for line in lines for word in line]
+        plain = _plain_lines(lines, plan["uppercase"])
+
+        # Pill/background is one rounded plate per caption group, under the text.
+        if plan["pill"]:
+            events.append(_pill_event(group, plan))
+
         if style_name == "clean" or not active:
-            plain = "\\N".join(" ".join(w["text"] for w in line) for line in lines)
             events.append(
                 f"Dialogue: 0,{ass_time(group['start'])},{ass_time(group['end'])},Clean,,0,0,0,,{plain}"
             )

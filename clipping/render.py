@@ -6,10 +6,30 @@ import os
 import shutil
 from pathlib import Path
 
-from .config import Settings
+from .config import FONTS_DIR, Settings
 from .utils import ToolError, log, run
 
 ENCODER = os.getenv("CLIP_ENCODER", "libx264")
+
+
+def _prepare_fonts(work_dir: Path) -> str:
+    """Copy bundled caption fonts next to the job and return a relative fontsdir.
+
+    libass receives this through the subtitles filter. Keeping it relative avoids
+    the Windows drive-letter escaping problems of absolute filter paths.
+    """
+    if not FONTS_DIR.exists():
+        return ""
+    dest = work_dir / "fonts"
+    dest.mkdir(exist_ok=True)
+    for src in FONTS_DIR.glob("*.ttf"):
+        target = dest / src.name
+        try:
+            if not target.exists() or target.stat().st_size != src.stat().st_size:
+                shutil.copy2(src, target)
+        except OSError:
+            log(f"[render] could not copy caption font {src.name}")
+    return "fonts"
 
 
 def _filter_path(path: Path, cwd: Path) -> str:
@@ -61,6 +81,8 @@ def render_clip(
     duration = max(0.5, end - start)
     muted = muted or []
     ass = _filter_path(ass_path, work_dir) if ass_path is not None else ""
+    fontsdir = _prepare_fonts(work_dir) if ass_path is not None else ""
+    subtitles = f"subtitles={ass}" + (f":fontsdir={fontsdir}" if fontsdir else "")
     fps = settings.fps
 
     if plan["mode"] == "crop" and sendcmd_path is not None:
@@ -183,7 +205,7 @@ def render_clip(
     if clean_out is not None and burn:
         parts += [
             "[vpre]split=2[vsub][vcln]",
-            f"[vsub]subtitles={ass},fps={fps},format=yuv420p[v]",
+            f"[vsub]{subtitles},fps={fps},format=yuv420p[v]",
             f"[vcln]fps={fps},format=yuv420p[vclean]",
         ]
         audio += ";[a]asplit=2[a1][a2]"
@@ -192,7 +214,7 @@ def render_clip(
         parts.append(f"[vpre]fps={fps},format=yuv420p[vclean]")
         maps = [("[vclean]", clean_out, "[a]")]
     else:
-        parts.append(f"[vpre]subtitles={ass},fps={fps},format=yuv420p[v]")
+        parts.append(f"[vpre]{subtitles},fps={fps},format=yuv420p[v]")
         maps = [("[v]", out_path, "[a]")]
     graph = ";".join(parts) + ";" + audio
 
