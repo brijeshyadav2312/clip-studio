@@ -12,7 +12,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: '127.0.0.1',
+    host: true,
+    allowedHosts: true,
     proxy: {
       '/api': { target: backend, changeOrigin: true },
       '/media': { target: backend, changeOrigin: true },
