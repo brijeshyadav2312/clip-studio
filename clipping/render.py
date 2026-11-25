@@ -45,7 +45,15 @@ def render_clip(
     plan: dict,
     sendcmd_path: Path | None = None,
     muted: list[tuple[float, float]] | None = None,
+    clean_out: Path | None = None,
 ) -> Path:
+    """Render a trimmed, reframed clip with captions burned in.
+
+    When ``clean_out`` is given, a caption-free master with identical trim and
+    framing is written in the same ffmpeg pass. The editor previews that master
+    and draws captions as a live overlay, so a style change never shows the
+    previous burn underneath; burned captions exist only in ``out_path``.
+    """
     duration = max(0.5, end - start)
     muted = muted or []
     ass = _filter_path(ass_path, work_dir)
@@ -55,11 +63,10 @@ def render_clip(
         sw = plan.get("scaled_w") or 1080
         # Seed the crop with the first path position so frame 0 never flashes at x=0.
         x0 = int(plan.get("samples")[0][1]) if plan.get("samples") else 0
-        video = (
+        pre = (
             f"[0:v]scale={sw}:1920:flags=lanczos,"
             f"sendcmd=f={_filter_path(sendcmd_path, work_dir)},"
-            f"crop={plan['crop_w']}:{plan['crop_h']}:{x0}:0,"
-            f"subtitles={ass},fps={fps},format=yuv420p[v]"
+            f"crop={plan['crop_w']}:{plan['crop_h']}:{x0}:0[vpre]"
         )
     elif plan["mode"] == "dynamic_landscape":
         intervals = plan.get("landscape_intervals", [])
@@ -75,19 +82,17 @@ def render_clip(
             "[fgin]scale=1080:608:flags=lanczos[fg_fit];"
             "[bg_blur][fg_fit]overlay=0:656[fit_str]"
         )
-        video = (
+        pre = (
             f"[0:v]split=2[in_c][in_f];"
             f"[in_c]{crop_chain};"
             f"[in_f]{fit_chain};"
-            f"[crop_str][fit_str]overlay=0:0:enable='{enable_expr}',"
-            f"subtitles={ass},fps={fps},format=yuv420p[v]"
+            f"[crop_str][fit_str]overlay=0:0:enable='{enable_expr}'[vpre]"
         )
     elif plan["mode"] == "gameplay_center":
         gx, gy, gw, gh = plan.get("src_crop", (0, 0, 1080, 1920))
-        video = (
+        pre = (
             f"[0:v]crop={gw}:{gh}:{gx}:{gy},"
-            f"scale=1080:1920:flags=lanczos,"
-            f"subtitles={ass},fps={fps},format=yuv420p[v]"
+            f"scale=1080:1920:flags=lanczos[vpre]"
         )
     elif plan["mode"] == "streamer_split":
         s = plan["streamer"]
@@ -129,8 +134,8 @@ def render_clip(
             )
             curr = "tagged"
 
-        filters.append(f"[{curr}]subtitles={ass},fps={fps},format=yuv420p[v]")
-        video = ";".join(filters)
+        filters.append(f"[{curr}][vpre]")
+        pre = ";".join(filters)
     elif plan["mode"] == "streamer_pip":
         s = plan["streamer"]
         cx, cy, cw, ch = s["cam_crop"]
@@ -151,42 +156,57 @@ def render_clip(
         }
         accent = theme_colors.get(settings.streamer_theme, "0x7c5cff")
 
-        video = (
+        pre = (
             f"[0:v]split=2[in_game][in_cam];"
             f"[in_game]crop={gw}:{gh}:{gx}:{gy},scale=1080:1920:flags=lanczos[bg];"
             f"[in_cam]crop={cw}:{ch}:{cx}:{cy},scale={pip_w}:{pip_h}:flags=lanczos,"
             f"drawbox=x=0:y=0:w={pip_w}:h={pip_h}:color={accent}@0.95:t=3[pip];"
-            f"[bg][pip]overlay={pos_x}:{pos_y},subtitles={ass},fps={fps},format=yuv420p[v]"
+            f"[bg][pip]overlay={pos_x}:{pos_y}[vpre]"
         )
     else:  # gameplay_blur / blur
-        video = (
+        pre = (
             "[0:v]split=2[bg][fg];"
             "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
             "crop=1080:1920,gblur=sigma=28[bgb];"
             "[fg]scale=1080:-2:flags=lanczos[fgs];"
-            f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,subtitles={ass},fps={fps},format=yuv420p[v]"
+            f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2[vpre]"
         )
 
-    graph = f"{video};{_audio_chain(info.get('has_audio', True), muted, duration)}"
+    # Caption burn-in happens on its own branch; the clean master branch never
+    # touches the subtitles filter, so no old style can linger under a new one.
+    parts = [pre]
+    audio = _audio_chain(info.get("has_audio", True), muted, duration)
+    if clean_out is not None:
+        parts += [
+            "[vpre]split=2[vsub][vcln]",
+            f"[vsub]subtitles={ass},fps={fps},format=yuv420p[v]",
+            f"[vcln]fps={fps},format=yuv420p[vclean]",
+        ]
+        audio += ";[a]asplit=2[a1][a2]"
+        maps = [("[v]", out_path, "[a1]"), ("[vclean]", clean_out, "[a2]")]
+    else:
+        parts.append(f"[vpre]subtitles={ass},fps={fps},format=yuv420p[v]")
+        maps = [("[v]", out_path, "[a]")]
+    graph = ";".join(parts) + ";" + audio
 
     cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
         "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(source.resolve()),
         "-filter_complex", graph,
-        "-map", "[v]", "-map", "[a]",
-        "-c:v", ENCODER,
     ]
+    codec = ["-c:v", ENCODER]
     if ENCODER == "libx264":
-        cmd += ["-preset", settings.preset, "-crf", str(settings.crf), "-profile:v", "high"]
+        codec += ["-preset", settings.preset, "-crf", str(settings.crf), "-profile:v", "high"]
     else:
-        cmd += ["-preset", "p5", "-cq", str(settings.crf), "-b:v", "0"]
-    cmd += [
+        codec += ["-preset", "p5", "-cq", str(settings.crf), "-b:v", "0"]
+    out_opts = [
         "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
         "-movflags", "+faststart",
         "-shortest",
-        str(out_path.resolve()),
     ]
+    for v_label, out, a_label in maps:
+        cmd += ["-map", v_label, "-map", a_label, *codec, *out_opts, str(out.resolve())]
 
     try:
         run(cmd, cwd=work_dir, timeout=60 * 30)
@@ -197,12 +217,14 @@ def render_clip(
             static["samples"] = []
             return render_clip(
                 source, out_path, work_dir, start, end, info, settings,
-                ass_path, static, None, muted,
+                ass_path, static, None, muted, clean_out=clean_out,
             )
         raise exc
 
     if not out_path.exists() or out_path.stat().st_size < 1024:
         raise ToolError(f"Render produced no usable output for {out_path.name}")
+    if clean_out is not None and (not clean_out.exists() or clean_out.stat().st_size < 1024):
+        log(f"[render] clean master not produced for {clean_out.name}")
     return out_path
 
 

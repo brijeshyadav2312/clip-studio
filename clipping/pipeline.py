@@ -218,15 +218,18 @@ def process(
                 sendcmd = reframe.write_sendcmd(plan["samples"], rf_dir / f"{clip['slug']}.txt")
 
             out = clip_dir / f"{clip['slug']}.mp4"
+            clean = clip_dir / f"{clip['slug']}.clean.mp4"
             render.render_clip(
                 source, out, job_dir, start, end, info, settings,
-                ass_path, plan, sendcmd, muted,
+                ass_path, plan, sendcmd, muted, clean_out=clean,
             )
 
             thumb = clip_dir / f"{clip['slug']}.jpg"
             _thumb(source, thumb, start + min(1.0, (end - start) / 3), job_dir)
 
             clip["video"] = f"clips/{out.name}"
+            if clean.exists():
+                clip["clean_video"] = f"clips/{clean.name}"
             clip["srt"] = f"clips/{Path(ass_path).stem}.srt"
             clip["thumb"] = f"clips/{thumb.name}" if thumb.exists() else None
             clip["reframe"] = {"mode": plan["mode"], "face_ratio": plan.get("face_ratio", 0)}
@@ -343,11 +346,16 @@ def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) ->
                 source_file = p
                 break
     if not source_file or not source_file.exists():
-        # Fallback to existing clip video if raw source is absent
-        clip_vid = job_dir / "clips" / f"{target_clip['slug']}.mp4"
-        if clip_vid.exists():
-            source_file = clip_vid
-        else:
+        # Prefer the caption-free clean master (if the raw source is gone) so a
+        # style change can still replace the previous burn instead of stacking.
+        for candidate in (
+            job_dir / "clips" / f"{target_clip['slug']}.clean.mp4",
+            job_dir / "clips" / f"{target_clip['slug']}.mp4",
+        ):
+            if candidate.exists():
+                source_file = candidate
+                break
+        if not source_file:
             raise ToolError("Source media file is no longer available on disk.")
 
     # Time bounds
@@ -356,7 +364,7 @@ def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) ->
     if end <= start + 0.5:
         end = start + 5.0
 
-    settings = settings_for(manifest.get("options") or {})
+    settings = Settings(**(manifest.get("options") or {}))
     if custom_options.get("framing"):
         settings.layout = custom_options["framing"]
 
@@ -391,9 +399,10 @@ def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) ->
         sendcmd = reframe.write_sendcmd(plan["samples"], rf_dir / f"{target_clip['slug']}.txt")
 
     out = clip_dir / f"{target_clip['slug']}.mp4"
+    clean = clip_dir / f"{target_clip['slug']}.clean.mp4"
     render.render_clip(
         source_file, out, job_dir, start, end, info, settings,
-        ass_path, plan, sendcmd, muted,
+        ass_path, plan, sendcmd, muted, clean_out=clean,
     )
 
     thumb = clip_dir / f"{target_clip['slug']}.jpg"
@@ -404,6 +413,9 @@ def customize_clip(job_dir: Path, clip_identifier: str, custom_options: dict) ->
     target_clip["duration"] = round(end - start, 2)
     target_clip["hook"] = hook or ""
     target_clip["customized"] = True
+    target_clip["rendered_at"] = int(time.time())
+    if clean.exists():
+        target_clip["clean_video"] = f"clips/{clean.name}"
     if custom_options.get("caption_style"):
         target_clip["caption_style"] = custom_options["caption_style"]
 

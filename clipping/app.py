@@ -314,6 +314,8 @@ def _normalize_clips(job_id: str, clips: list[dict], check_exists: bool = False)
         if "srt_url" not in c_copy:
             srt_path = c.get("srt") or (f"clips/{Path(fname).stem}.srt" if video_path else "")
             c_copy["srt_url"] = f"/media/{job_id}/{srt_path}" if srt_path else ""
+        if "clean_url" not in c_copy and c.get("clean_video"):
+            c_copy["clean_url"] = f"/media/{job_id}/{c.get('clean_video')}"
         if "thumb_url" not in c_copy and c.get("thumb"):
             c_copy["thumb_url"] = f"/media/{job_id}/{c.get('thumb')}"
         normalized.append(c_copy)

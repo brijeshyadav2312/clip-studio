@@ -193,6 +193,8 @@ export default function CustomizerView({
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  // Cache-buster for the burned export download link.
+  const [burnedAt, setBurnedAt] = useState(0);
   const [duration, setDuration] = useState(30);
   const [isMuted, setIsMuted] = useState(false);
 
@@ -266,10 +268,19 @@ export default function CustomizerView({
   const filename = rawFilename.endsWith('.mp4') ? rawFilename : `${rawFilename}.mp4`;
   const srtFilename = filename.replace(/\.mp4$/i, '.srt');
   const resolvedJobId = currentClip?.jobId || '';
+  // Preview the caption-free master when available; captions come only from the
+  // live overlay, so changing the style never shows an old burn underneath.
+  const rawClean = currentClip?.clean_url || currentClip?.clean_video || '';
+  const previewUrl = rawClean
+    ? (rawClean.startsWith('http') || rawClean.startsWith('/media')
+        ? rawClean
+        : `/media/${resolvedJobId}/${rawClean}`)
+    : '';
   const rawVideo = currentClip?.url || currentClip?.video || '';
-  const videoUrl = rawVideo.startsWith('http') || rawVideo.startsWith('/media')
+  const burnedUrl = rawVideo.startsWith('http') || rawVideo.startsWith('/media')
     ? rawVideo
     : `/media/${resolvedJobId}/${currentClip?.video || `clips/${filename}`}`;
+  const videoUrl = previewUrl || burnedUrl;
   const rawSrt = currentClip?.srt_url || currentClip?.srt || '';
   const srtUrl = rawSrt.startsWith('http') || rawSrt.startsWith('/media')
     ? rawSrt
@@ -361,6 +372,8 @@ export default function CustomizerView({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Export failed');
+      // Bump the burned file's URL so the browser drops the cached old render.
+      setBurnedAt(Date.now());
       setCurrentClip(data.clip);
       setExportMessage('✓ Burned-in MP4 exported successfully!');
       setTimeout(() => setExportMessage(null), 4000);
@@ -499,7 +512,7 @@ export default function CustomizerView({
           </button>
 
           <a
-            href={videoUrl}
+            href={`${burnedUrl}${burnedUrl.includes('?') ? '&' : '?'}v=${burnedAt}`}
             download={filename}
             className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#ba6238] to-[#d47345] hover:from-[#c96a3d] hover:to-[#df7d4f] text-white text-xs font-bold shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
             title="Download this MP4 short"
